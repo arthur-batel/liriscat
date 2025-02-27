@@ -1,0 +1,11 @@
+.idea
+__pycache__/
+liriscat/dataset/__pycache__/
+liriscat/model/__pycache__/
+liriscat/utils/__pycache__/
+experiment/__pycache__/
+experiment/datasets/__pycache__/
+experiment/datasets/data_utils/__pycache__/
+build/
+dist/
+liriscat.egg-info/
