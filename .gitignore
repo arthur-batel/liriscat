@@ -6,6 +6,10 @@ liriscat/utils/__pycache__/
 experiment/__pycache__/
 experiment/datasets/__pycache__/
 experiment/datasets/data_utils/__pycache__/
+experiments/datasets/1-raw_data/
+experiments/datasets/2-preprocessed_data/
+experiments/logs/
 build/
 dist/
+y/
 liriscat.egg-info/

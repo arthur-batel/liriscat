@@ -10,7 +10,7 @@ Welcome to the official repository for LIRISCAT
 From source
 ```bash
 git clone https://github.com/arthur-batel/liriscat.git
-cd IMPACT
+cd liriscat
 make install
 conda activate liriscat-env
 # open one of the notebooks in the experiments/notebook_examples folder
