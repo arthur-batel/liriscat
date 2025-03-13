@@ -1,7 +1,7 @@
 .idea
 __pycache__/
 liriscat/dataset/__pycache__/
-liriscat/model/__pycache__/
+liriscat/selectionStrategy/__pycache__/
 liriscat/utils/__pycache__/
 experiment/__pycache__/
 experiment/datasets/__pycache__/
