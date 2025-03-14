@@ -424,7 +424,7 @@ class IMPACT(AbstractModel):
 
         super().init_model(train_data, valid_data)
 
-        self.user_params_optimizer = torch.optim.SGD(self.model.users_emb.parameters(), lr=0.0001) #todo : adapt the learning rate
+        self.user_params_optimizer = torch.optim.SGD(self.model.users_emb.parameters(), lr=0.1) #todo : adapt the learning rate
         self.params_optimizer = torch.optim.Adam(self.model.parameters(),lr=0.0001)  # todo : adapt the learning rate
 
         # Reduce the learning rate when a metric has stopped improving

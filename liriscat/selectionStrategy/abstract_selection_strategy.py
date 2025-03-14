@@ -203,7 +203,7 @@ class AbstractSelectionStrategy(ABC):
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_params(user_ids, question_ids, labels, categories)
+                    self.CDM.update_users(user_ids, question_ids, labels, categories)
                     self.CDM.model.eval()
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_categories)
@@ -267,7 +267,7 @@ class AbstractSelectionStrategy(ABC):
         self.model.train()
 
         # Call the selected training method
-        self._train_method(train_loader, valid_loader, valid_data, self.optimizer, self.scheduler, self.scaler)
+        self._train_method(train_loader, valid_loader)
 
         self._trained = True
 
@@ -278,12 +278,14 @@ class AbstractSelectionStrategy(ABC):
             logging.info("Params saved")
         self.fold += 1
 
-    def _train_early_stopping_error(self, train_loader, valid_loader, valid_data, optimizer, scheduler,
-                                    scaler):
+    def _train_early_stopping_error(self, train_loader, valid_loader):
 
         epochs = self.config['num_epochs']
         eval_freq = self.config['eval_freq']
         patience = self.config['patience']
+
+        if hasattr(torch, "compile"):
+            self.model = torch.compile(self.model)
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
@@ -305,7 +307,6 @@ class AbstractSelectionStrategy(ABC):
 
                     user_ids, question_ids, labels, categories = dataset.feedIMPACT(qq, ql, qc, qc_nb, qu, self.device)
 
-                    self.CDM.update_users(user_ids, question_ids, labels, categories)
                     self.update_params(user_ids, question_ids, labels, categories)
 
                 self.CDM.update_params(user_ids, question_ids, labels, categories)
@@ -315,7 +316,7 @@ class AbstractSelectionStrategy(ABC):
                 with torch.no_grad(), torch.amp.autocast('cuda'):
                     valid_loss, valid_metric = self.evaluate_valid(valid_loader)
 
-                    print(valid_metric)
+                    print(valid_metric, valid_loss)
 
                     with warnings.catch_warnings(record=True) as w:
                         warnings.simplefilter("always")
@@ -326,7 +327,7 @@ class AbstractSelectionStrategy(ABC):
                         self.best_valid_metric = valid_metric
                         self.best_model_params = self.model.state_dict()
 
-                        scheduler.step(valid_loss)
+                        self.scheduler.step(valid_loss)
 
                     if ep - self.best_epoch >= patience:
                         break
