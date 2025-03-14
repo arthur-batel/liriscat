@@ -205,41 +205,44 @@ class CATDataset(Dataset, data.dataset.Dataset):
 
         meta_concepts_nb = torch.tensor(
             [len(self.concept_map[question.item()]) for question in data['q_ids'][meta_index]], device=self.device)
-        mc = [self.concept_map[question.item()] for question in data['q_ids'][meta_index]]
+        mc = list(itertools.chain.from_iterable(
+            self.concept_map[question.item()] for question in data['q_ids'][meta_index]
+        ))
 
-        result = (data['q_ids'][query_index],
-                  data['labels'][query_index],
-                  qc,
-                  query_concepts_nb,
-                  torch.ones_like(data['q_ids'][query_index], device=self.device)*self.user_idx2id[index],
+        result = (self.user_idx2id[index],# int
+                    data['q_ids'][query_index],  # torch.Tensor
+                  data['labels'][query_index],  # torch.Tensor
+                  qc,  # list of lists
+                  query_concepts_nb,  # torch.Tensor
 
-                  data['q_ids'][meta_index],
-                  data['labels'][meta_index],
-                  mc,
-                  meta_concepts_nb,
-                  torch.ones_like(data['q_ids'][meta_index], device=self.device)*self.user_idx2id[index],
+                  data['q_ids'][meta_index],  # torch.Tensor
+                  data['labels'][meta_index],  # torch.Tensor
+                  mc,  # list of ints
+                  meta_concepts_nb,  # torch.Tensor
                   )
 
         return result
 
+def feedIMPACT(QQ,QL,QC_NB,U,QC, device):
 
-def feedIMPACT(qq, ql, qc, qc_nb, qu, device):
+    question_ids = torch.repeat_interleave(QQ, QC_NB)
+    user_ids = torch.repeat_interleave(U, QC_NB)
+    labels = torch.repeat_interleave(QL, QC_NB)
 
+    return user_ids, question_ids, labels, QC
 
-    qc_nb = ll2tensor(qc_nb, device).int()
-    qq = ll2tensor(qq, device).int()
-    qu = ll2tensor(qu, device).int()
-    ql = ll2tensor(ql, device)
+def feedIMPACT_meta(MQ,ML,MC_NB,MU,MC):
+    MQ = MQ.reshape(-1)
+    ML = ML.reshape(-1)
+    MC_NB = MC_NB.reshape(-1)
+    MU = MU.reshape(-1)
 
-    flat_qc = list(itertools.chain.from_iterable(qc))
-    qc = torch.tensor(flat_qc, device=device).int()
+    question_ids = torch.repeat_interleave(MQ, MC_NB)
+    user_ids = torch.repeat_interleave(MU, MC_NB)
+    labels = torch.repeat_interleave(ML, MC_NB)
+    category_ids = MC
 
-    question_ids = torch.repeat_interleave(qq, qc_nb)
-    user_ids = torch.repeat_interleave(qu, qc_nb)
-    labels = torch.repeat_interleave(ql, qc_nb)
-    categories = torch.tensor(qc, device=device)
-
-    return user_ids, question_ids, labels, categories
+    return user_ids, question_ids, labels, category_ids
 
 def ll2tensor(ll, device, dtype=torch.float):
     total_length = sum(len(lst) for lst in ll)
@@ -251,8 +254,6 @@ def ll2tensor(ll, device, dtype=torch.float):
         result[pos:pos + l] = torch.tensor(lst, dtype=dtype, device=device)
         pos += l
     return result
-
-
 
 def remove(ll, ll_sub,remove_indices):
     # Convert removal indices to a simple list of integers
@@ -279,43 +280,51 @@ def remove_from_list(ll, ll_sub, remove_indices):
         new_ll.append([v for j, v in enumerate(sublist) if j != rem_index])
     return new_ll, ll_sub
 
-
-
-
-
 class CustomCollate(object):
     def __init__(self, data: CATDataset):
         self.data = data
 
     def __call__(self, batch):
-        qq_list = []
-        ql_list = []
+
+        I = torch.arange(0, self.data.n_questions, device=self.data.device, dtype=torch.long).repeat(len(batch),1)
+        Lengths = torch.zeros(size=(len(batch),), device=self.data.device, dtype=torch.long)
+
+        QU = torch.zeros(size=(len(batch),), device=self.data.device, dtype=torch.long)
+        QQ = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
+        QL = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
+        QC_NB = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
+
+        MU = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
+        MQ = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
+        ML = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
+        MC_NB = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
+
         qc_list = []
-        qc_nb_list = []
-        qu_list = []
-
-        mq_list = []
-        ml_list = []
         mc_list = []
-        mc_nb_list = []
-        mu_list = []
 
-        for qq, ql, qc, qc_nb, qu, mq, ml, mc, mc_nb, mu in batch :
-            qq_list.append(qq)
-            ql_list.append(ql)
+        for i, (u, qq, ql, qc, qc_nb, mq, ml, mc, mc_nb) in enumerate(batch) :
+            N = qq.shape[0]
+            Lengths[i] = N
+            QU[i] = u
+
+            I[i,N:] = 0
+
+            QQ[i,:N] = qq
+            QL[i, :N] = ql
+            QC_NB[i, :N] = qc_nb
+
             qc_list.append(qc)
-            qc_nb_list.append(qc_nb)
-            qu_list.append(qu)
 
-            mq_list.append(mq)
-            ml_list.append(ml)
-            mc_list.append(mc)
-            mc_nb_list.append(mc_nb)
-            mu_list.append(mu)
+            MU[i] = u*torch.ones_like(mq)
+            MQ[i] = mq
+            ML[i] = ml
+            MC_NB[i] = mc_nb
 
-        return qq_list,ql_list,qc_list,qc_nb_list,qu_list,mq_list,ml_list,mc_list,mc_nb_list,mu_list
+            mc_list.extend(mc)
 
+        MC = torch.tensor(mc_list, device=self.data.device).int()
 
+        return Lengths,I,QU,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC, MU
 
 class IMPACTCollate(object):
     def __init__(self, data: CATDataset):

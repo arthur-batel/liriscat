@@ -1,4 +1,5 @@
 import functools
+import itertools
 import warnings
 from abc import ABC, abstractmethod
 from itertools import chain
@@ -175,40 +176,33 @@ class AbstractSelectionStrategy(ABC):
         pred_list = []
         label_list = []
 
-        for qq_unsub_list, ql_unsub_list, qc_unsub_list, qc_nb_unsub_list, qu_unsub_list, mq, ml, mc, mc_nb, mu in valid_loader:
-            N = len(qq_unsub_list)
-            qq_sub_list = [[] for _ in range(N)]
-            ql_sub_list = [[] for _ in range(N)]
-            qc_sub_list = [[] for _ in range(N)]
-            qc_nb_sub_list = [[] for _ in range(N)]
-            qu_sub_list = [[] for _ in range(N)]
+        for batch in valid_loader:
 
-            new_mc = []
-            for l in mc :
-                new_mc.append(list(chain.from_iterable(l)))
-            mc = new_mc
+            # Unpack batch; ensure the collate_fn returns the expected order.
+            Lengths,I,U,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC,MU = batch
+            row_indices = torch.arange(I.size(0))
 
-            m_user_ids, m_question_ids, m_labels, m_categories = dataset.feedIMPACT(mq, ml, mc, mc_nb, mu, self.device)
+            m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(MQ,ML,MC_NB,MU,MC)
 
             for t in range(self.config['n_query']):
-                actions = self.select_action(qq_unsub_list, ql_unsub_list, qc_unsub_list)
+                actions = self.select_action(t, I, Lengths)
 
-                qq_unsub_list, qq = dataset.remove(qq_unsub_list, qq_sub_list, actions)
-                ql_unsub_list, ql = dataset.remove(ql_unsub_list, ql_sub_list, actions)
-                qc_unsub_list, qc = dataset.remove_from_list(qc_unsub_list, qc_sub_list, actions)
-                qc_nb_unsub_list, qc_nb = dataset.remove(qc_nb_unsub_list, qc_nb_sub_list, actions)
-                qu_unsub_list, qu = dataset.remove(qu_unsub_list, qu_sub_list, actions)
+                qc_action_list = [outer[idx] for outer, idx in zip(qc_list, I[row_indices,actions].tolist())]
+                flat_qc = list(itertools.chain.from_iterable(qc_action_list))
+                QC = torch.tensor(flat_qc, device=self.device).int()
 
-                user_ids, question_ids, labels, categories = dataset.feedIMPACT(qq, ql, qc, qc_nb, qu, self.device)
+                user_ids, question_ids, labels, categories = dataset.feedIMPACT(
+                    QQ[row_indices, I[row_indices, actions]], QL[row_indices, I[row_indices, actions]],
+                    QC_NB[row_indices, I[row_indices, actions]], U, QC, self.device)
 
                 with torch.enable_grad():
                     self.CDM.model.train()
                     self.CDM.update_users(user_ids, question_ids, labels, categories)
                     self.CDM.model.eval()
 
-                preds = self.CDM.model(m_user_ids, m_question_ids, m_categories)
+                preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
-                total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_categories)
+                total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
                 loss_list.append(total_loss.detach())
 
                 pred_list.append(preds)
@@ -247,8 +241,8 @@ class AbstractSelectionStrategy(ABC):
         logging.info("-- START Training --")
 
         self.best_epoch = 0
-        self.best_valid_loss = 100000
-        self.best_valid_metric = self.metric_sign * 100000
+        self.best_valid_loss = float('inf')
+        self.best_valid_metric = self.metric_sign * float('inf')
 
         self.best_S_params = self.get_params()
         self.best_CDM_params = self.CDM.get_params()
@@ -265,8 +259,6 @@ class AbstractSelectionStrategy(ABC):
         self.scaler = torch.amp.GradScaler(self.device)
 
         self.model.train()
-
-        # Call the selected training method
         self._train_method(train_loader, valid_loader)
 
         self._trained = True
@@ -289,27 +281,33 @@ class AbstractSelectionStrategy(ABC):
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
-            for qq_unsub_list, ql_unsub_list, qc_unsub_list, qc_nb_unsub_list, qu_unsub_list, mq, ml, mc, mc_nb, mu in train_loader:  # todo: also use the meta set for training
-                N = len(qq_unsub_list)
-                qq_sub_list = [[] for _ in range(N)]
-                ql_sub_list = [[] for _ in range(N)]
-                qc_sub_list = [[] for _ in range(N)]
-                qc_nb_sub_list = [[] for _ in range(N)]
-                qu_sub_list = [[] for _ in range(N)]
+            for batch in train_loader:
+
+                # Unpack batch; ensure the collate_fn returns the expected order.
+                Lengths,I,U,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC,MU = batch  # todo: also use the meta set for training
+                row_indices = torch.arange(I.size(0))
+                m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(MQ, ML, MC_NB, MU, MC)
+
                 for t in range(self.config['n_query']):
-                    actions = self.select_action(qq_unsub_list, ql_unsub_list, qc_unsub_list)
 
-                    qq_unsub_list, qq = dataset.remove(qq_unsub_list, qq_sub_list, actions)
-                    ql_unsub_list, ql = dataset.remove(ql_unsub_list, ql_sub_list, actions)
-                    qc_unsub_list, qc = dataset.remove_from_list(qc_unsub_list, qc_sub_list, actions)
-                    qc_nb_unsub_list, qc_nb = dataset.remove(qc_nb_unsub_list, qc_nb_sub_list, actions)
-                    qu_unsub_list, qu = dataset.remove(qu_unsub_list, qu_sub_list, actions)
+                    actions = self.select_action(t,I,Lengths)
 
-                    user_ids, question_ids, labels, categories = dataset.feedIMPACT(qq, ql, qc, qc_nb, qu, self.device)
+                    qc_action_list = [outer[idx] for outer, idx in zip(qc_list, I[row_indices,actions].tolist())]
 
-                    self.update_params(user_ids, question_ids, labels, categories)
+                    flat_qc = list(itertools.chain.from_iterable(qc_action_list))
+                    QC = torch.tensor(flat_qc, device=self.device).int()
 
-                self.CDM.update_params(user_ids, question_ids, labels, categories)
+                    user_ids, question_ids, labels, category_ids = dataset.feedIMPACT(QQ[row_indices,I[row_indices,actions]],QL[row_indices,I[row_indices,actions]],QC_NB[row_indices,I[row_indices,actions]],U,QC, self.device)
+
+                    tmp = I[row_indices,t]
+                    I[row_indices, t] = I[row_indices,actions]
+                    I[row_indices, actions] = tmp
+
+
+                    self.CDM.update_users(user_ids, question_ids, labels, category_ids)
+                    self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
+
+                self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
             # Early stopping
             if (ep + 1) % eval_freq == 0:

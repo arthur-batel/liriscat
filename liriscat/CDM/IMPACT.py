@@ -424,11 +424,11 @@ class IMPACT(AbstractModel):
 
         super().init_model(train_data, valid_data)
 
-        self.user_params_optimizer = torch.optim.SGD(self.model.users_emb.parameters(), lr=0.1) #todo : adapt the learning rate
+        self.user_params_optimizer = torch.optim.SGD(self.model.users_emb.parameters(), lr=0.01) #todo : adapt the learning rate
         self.params_optimizer = torch.optim.Adam(self.model.parameters(),lr=0.0001)  # todo : adapt the learning rate
 
         # Reduce the learning rate when a metric has stopped improving
-        self.user_params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=2, factor=0.5)
+        self.user_params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=1, factor=0.5)
         self.params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=2, factor=0.5)
 
         self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
