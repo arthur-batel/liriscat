@@ -54,6 +54,13 @@ class Dataset(object):
         return self.metadata["num_user_id"]
 
     @property
+    def n_actual_users(self):
+        """
+        @return: Number of users in the current dataset object (after splitting)
+        """
+        return len(self.users_id)
+
+    @property
     def n_logs(self):
         """
         @return: Total number of users in the dataset (before splitting)
@@ -317,6 +324,13 @@ class EnvModule(torch.jit.ScriptModule):
         self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
 
         self.device = device
+
+    @property
+    def n_meta_logs(self):
+        """
+        @return: Total number of meta logs (including logs multiplied because of several categories
+        """
+        return self.meta_cat_nb.sum().item()
 
     @torch.jit.script_method
     def update(self, actions: Tensor, t: int) -> None:

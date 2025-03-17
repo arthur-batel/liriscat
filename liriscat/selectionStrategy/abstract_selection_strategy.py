@@ -2,8 +2,12 @@ import functools
 import itertools
 import warnings
 from abc import ABC, abstractmethod
+import numpy as np
 from itertools import chain
 from stat import S_IREAD
+
+from sklearn.metrics import roc_auc_score
+from torch.cuda import device
 
 from liriscat import utils
 from liriscat import dataset
@@ -179,7 +183,7 @@ class AbstractSelectionStrategy(ABC):
         for batch_users_env in valid_loader:
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(batch_users_env)
+            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
 
             for t in range(self.config['n_query']):
 
@@ -206,6 +210,57 @@ class AbstractSelectionStrategy(ABC):
             mean_loss = torch.mean(torch.stack(loss_list))
 
             return mean_loss, self.valid_metric(pred_tensor, label_tensor)
+
+    @evaluation_param
+    @evaluation_state
+    def evaluate_test(self, test_data: dataset.CATDataset):
+        """
+        Evaluate the model on the given data using the given metrics.
+        """
+
+        test_loader = data.DataLoader(test_data, collate_fn=dataset.CustomCollate(test_data), batch_size=10000,
+                                      shuffle=False, pin_memory=False)
+
+        pred_list = {t : [] for t in range(self.config['n_query'])}
+        label_list = {t : [] for t in range(self.config['n_query'])}
+        emb_tensor = torch.zeros(size = (test_data.n_actual_users, self.config['n_query'], test_data.n_categories), device=self.device)
+
+        log_idx = 0
+        for batch_users_env in test_loader:
+
+            # Prepare the meta set
+            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
+
+            for t in range(self.config['n_query']):
+
+
+                # Select the action (question to submit)
+                actions = self.select_action(t, batch_users_env)
+
+                batch_users_env.update(actions, t)
+
+                with torch.enable_grad():
+                    self.CDM.model.train()
+                    self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids,
+                                          batch_users_env.query_labels, batch_users_env.query_category_ids)
+                    self.CDM.model.eval()
+
+                preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+
+                pred_list[t].append(preds)
+                label_list[t].append(m_labels)
+                emb_tensor[log_idx:log_idx+batch_users_env.query_users.shape[0],t,:] = self.CDM.get_user_emb()[batch_users_env.query_users,:]
+
+            log_idx += batch_users_env.query_users.shape[0]
+
+        # Compute metrics in one pass using a dictionary comprehension
+        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t])).cpu().item()
+                   for metric in self.pred_metrics} for t in range(self.config['n_query'])}
+
+        results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_data)
+                   for metric in self.profile_metrics} for t in range(self.config['n_query'])}
+
+        return results_pred, results_profiles
 
     def train(self, train_data: dataset.CATDataset, valid_data: dataset.CATDataset):
         """Train the model."""
@@ -235,7 +290,7 @@ class AbstractSelectionStrategy(ABC):
 
         train_loader = data.DataLoader(train_data, collate_fn=dataset.CustomCollate(train_data), batch_size=batch_size,
                                        shuffle=True, pin_memory=False)
-        valid_loader = data.DataLoader(valid_data, collate_fn=dataset.CustomCollate(valid_data), batch_size=4000,
+        valid_loader = data.DataLoader(valid_data, collate_fn=dataset.CustomCollate(valid_data), batch_size=10000,
                                        shuffle=False, pin_memory=False)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)

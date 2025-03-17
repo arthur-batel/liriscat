@@ -1,4 +1,6 @@
 import json
+
+import numba
 import numpy as np
 import torch
 import random
@@ -204,3 +206,87 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             valid_metric, learning_rate, batch_size, num_epochs, eval_freq, patience, device,
                             lambda_, tensorboard, flush_freq, pred_metrics, profile_metrics,
                             num_responses, low_mem,n_query)
+
+def evaluate_doa(E, R, metadata, concept_map):
+    q = {}
+    for r in range(metadata['num_item_id']):
+        q[r] = []
+
+    for u, i in torch.tensor(R).nonzero():
+        q[i.item()].append(u.item())
+
+    max_concepts_per_item = 0
+    list_concept_map = []
+    for d in concept_map:
+        list_concept_map.append(concept_map[d])
+        l = len(concept_map[d])
+        if l > max_concepts_per_item:
+            max_concepts_per_item = l
+
+    list_q = []
+    list_q_len = []
+    for key in q.keys():
+        list_q.append(q[key])
+        list_q_len.append(len(q[key]))
+
+    max_q_len = max(len(q_i) for q_i in list_q)
+    q_array = _preprocess_list_q(list_q, max_q_len)
+    concept_map_array = _preprocess_concept_map(list_concept_map, max_concepts_per_item)
+
+    # Convert q_len to a NumPy array
+    q_len = np.array(list_q_len, dtype=np.int32)
+
+    num_dim = metadata['num_dimension_id']
+    num_user = metadata['num_user_id']
+
+    # Optionally ensure concept indices are in range inside _compute_doa:
+    # You can either filter concept_indices there or ensure _preprocess_concept_map
+    # doesn't produce out-of-range indices.
+
+    return _compute_doa(q_array, q_len, num_dim, E, concept_map_array, R, num_user)
+
+
+@numba.jit(nopython=True, cache=True)
+def _compute_doa(q, q_len, num_dim, E, concept_map_array, R, num_user):
+    s = np.zeros(shape=(1, num_dim))
+    beta = np.zeros(shape=(1, num_dim))
+
+    for i in range(len(q)):  # Adjusted to loop over indices
+        concept_indices = concept_map_array[i]
+        concept_indices = concept_indices[(concept_indices >= 0) & (concept_indices < num_dim)]
+
+        E_i = E[:, concept_indices]  # Index E using NumPy array
+        q_i_len = q_len[i]
+
+        for u_i in range(q_i_len - 1):
+            u = q[i, u_i]
+            for v in q[i, u_i + 1:q_i_len]:
+                if R[u, i] > R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_i[u, idx] > E_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_i[u, idx] != E_i[v, idx]
+                elif R[u, i] < R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_i[u, idx] < E_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_i[u, idx] != E_i[v, idx]
+
+    # Avoid division by zero
+    for idx in range(num_dim):
+        if beta[0, idx] == 0:
+            beta[0, idx] = 1
+
+    return s / beta
+
+def _preprocess_list_q(list_q, max_len):
+    q_array = -np.ones((len(list_q), max_len), dtype=np.int64)  # Initialize with -1 for padding
+    for i, q_i in enumerate(list_q):
+        q_array[i, :len(q_i)] = q_i  # Copy each list q_i into the array, pad with -1 if shorter
+    return q_array
+
+# Helper function to convert list of lists into padded NumPy array
+def _preprocess_concept_map(list_concept_map, max_len):
+    concept_map_array = -np.ones((len(list_concept_map), max_len), dtype=np.int64)  # Initialize with -1
+    for i, concepts in enumerate(list_concept_map):
+        concept_map_array[i, :len(concepts)] = concepts  # Copy valid values into array
+    return concept_map_array
+
