@@ -1,15 +1,14 @@
 import logging
-from collections import defaultdict, deque
-
-import torch
 import warnings
 from torch.utils import data
-import numpy as np
-import pandas as pd
-import random
 import itertools
 import numpy as np
-from numba import njit, typed
+import torch
+from torch import Tensor
+import torch.jit
+from typing import List
+import itertools
+
 
 
 class Dataset(object):
@@ -223,140 +222,159 @@ class CATDataset(Dataset, data.dataset.Dataset):
 
         return result
 
-def feedIMPACT(QQ,QL,QC_NB,U,QC, device):
-
-    question_ids = torch.repeat_interleave(QQ, QC_NB)
-    user_ids = torch.repeat_interleave(U, QC_NB)
-    labels = torch.repeat_interleave(QL, QC_NB)
-
-    return user_ids, question_ids, labels, QC
-
-def feedIMPACT_meta(MQ,ML,MC_NB,MU,MC):
-    MQ = MQ.reshape(-1)
-    ML = ML.reshape(-1)
-    MC_NB = MC_NB.reshape(-1)
-    MU = MU.reshape(-1)
-
-    question_ids = torch.repeat_interleave(MQ, MC_NB)
-    user_ids = torch.repeat_interleave(MU, MC_NB)
-    labels = torch.repeat_interleave(ML, MC_NB)
-    category_ids = MC
-
-    return user_ids, question_ids, labels, category_ids
-
-def ll2tensor(ll, device, dtype=torch.float):
-    total_length = sum(len(lst) for lst in ll)
-    result = torch.empty(total_length, dtype=dtype, device=device)
-    pos = 0
-    for lst in ll:
-        l = len(lst)
-        # Convert the current list to a tensor and copy it into the preallocated result.
-        result[pos:pos + l] = torch.tensor(lst, dtype=dtype, device=device)
-        pos += l
-    return result
-
-def remove(ll, ll_sub,remove_indices):
-    # Convert removal indices to a simple list of integers
-    rem_idxs = remove_indices.tolist()
-    new_ll = []
-
-    for i, sublist in enumerate(ll):
-        rem_index = rem_idxs[i]
-        # Save the removed element
-        ll_sub[i].append(sublist[rem_index])
-        # Build the new sublist without the removed element
-        new_ll.append([v for j, v in enumerate(sublist) if j != rem_index])
-    return new_ll, ll_sub
-
-def remove_from_list(ll, ll_sub, remove_indices):
-    # Convert removal indices to a simple list of integers
-    rem_idxs = remove_indices
-    new_ll = []
-    for i, sublist in enumerate(ll):
-        rem_index = rem_idxs[i]
-        # Save the removed element
-        ll_sub[i].extend(sublist[rem_index])
-        # Build the new sublist without the removed element
-        new_ll.append([v for j, v in enumerate(sublist) if j != rem_index])
-    return new_ll, ll_sub
-
 class CustomCollate(object):
     def __init__(self, data: CATDataset):
         self.data = data
 
     def __call__(self, batch):
 
-        I = torch.arange(0, self.data.n_questions, device=self.data.device, dtype=torch.long).repeat(len(batch),1)
-        Lengths = torch.zeros(size=(len(batch),), device=self.data.device, dtype=torch.long)
+        env = EnvModule(len(batch), self.data.n_questions, self.data.config['n_query'], self.data.device)
 
-        QU = torch.zeros(size=(len(batch),), device=self.data.device, dtype=torch.long)
-        QQ = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
-        QL = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
-        QC_NB = torch.zeros(size=(len(batch), self.data.n_questions), device=self.data.device, dtype=torch.long)
-
-        MU = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
-        MQ = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
-        ML = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
-        MC_NB = torch.zeros(size=(len(batch), self.data.config['n_query']), device=self.data.device, dtype=torch.long)
-
+        # Lists of lists to store the categories associated to each question and meta question
         qc_list = []
         mc_list = []
 
         for i, (u, qq, ql, qc, qc_nb, mq, ml, mc, mc_nb) in enumerate(batch) :
+
+            ### ----- Query questions
+            # Number of query question for the current user
             N = qq.shape[0]
-            Lengths[i] = N
-            QU[i] = u
+            env.query_len[i] = N
+            env.query_users[i] = u
 
-            I[i,N:] = 0
+            # Padding with zeros on the right
+            env.query_meta_indices[i,N:] = 0
 
-            QQ[i,:N] = qq
-            QL[i, :N] = ql
-            QC_NB[i, :N] = qc_nb
+            # Saving logs questions, responses and number of categories
+            env.query_questions[i,:N] = qq
+            env.query_responses[i, :N] = ql
+            env.query_cat_nb[i, :N] = qc_nb
 
+            # Saving the categories associated to each question
             qc_list.append(qc)
 
-            MU[i] = u*torch.ones_like(mq)
-            MQ[i] = mq
-            ML[i] = ml
-            MC_NB[i] = mc_nb
+            ### ----- Meta questions
+            # Saving meta users, questions, responses and number of categories
+            env.meta_users[i] = u*torch.ones_like(mq)
+            env.meta_questions[i] = mq
+            env.meta_responses[i] = ml
+            env.meta_cat_nb[i] = mc_nb
 
+            # Saving the categories associated to each meta question
             mc_list.extend(mc)
 
-        MC = torch.tensor(mc_list, device=self.data.device).int()
+        # Convert the lists of lists to tensors because meta questions are not varying
+        env.meta_categories = torch.tensor(mc_list, device=self.data.device).int()
+        env.query_cat_list = qc_list
 
-        return Lengths,I,QU,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC, MU
+        return env
 
-class IMPACTCollate(object):
-    def __init__(self, data: CATDataset):
-        self.data = data
+class EnvModule(torch.jit.ScriptModule):
+    # Declare attributes as class fields with type annotations
+    query_meta_indices: Tensor
+    row_idx: Tensor
+    query_len: Tensor
+    query_users: Tensor
+    query_questions: Tensor
+    query_responses: Tensor
+    query_cat_nb: Tensor
+    query_cat_list: List[List[List[int]]]
+    query_user_ids: Tensor
+    query_question_ids: Tensor
+    query_labels: Tensor
+    query_category_ids: Tensor
+    meta_users: Tensor
+    meta_questions: Tensor
+    meta_responses: Tensor
+    meta_cat_nb: Tensor
+    meta_categories: Tensor
+    device: torch.device
 
-    def __call__(self, batch):
-        qq_list = []
-        ql_list = []
-        qc_list = []
-        qu_list = []
-        mq_list = []
-        ml_list = []
-        mc_list = []
-        mu_list = []
+    def __init__(self, batch_size: int, n_questions: int, n_query: int, device: torch.device):
+        super(EnvModule, self).__init__()
 
-        for qq, ql, qc, qu, mq, ml, mc, mu in batch:
-            qq_list.append(qq)
-            ql_list.append(ql)
-            qc_list.append(qc)
-            qu_list.append(qu)
-            mq_list.append(mq)
-            ml_list.append(ml)
-            mc_list.append(mc)
-            mu_list.append(mu)
+        # initialize state variables
+        self.query_meta_indices = torch.arange(0, n_questions, device=device, dtype=torch.long).repeat(batch_size, 1)
+        self.row_idx = torch.arange(self.query_meta_indices.size(0))
 
-        qq_tensor = torch.cat(qq_list)
-        ql_tensor = torch.cat(ql_list)
-        qc_tensor = torch.cat(qc_list)
-        qu_tensor = torch.cat(qu_list)
-        mq_tensor = torch.cat(mq_list)
-        ml_tensor = torch.cat(ml_list)
-        mc_tensor = torch.cat(mc_list)
-        mu_tensor = torch.cat(mu_list)
+        # Initialize attributes with proper tensors
+        self.query_len = torch.zeros(batch_size, dtype=torch.long, device=device)
+        self.query_users = torch.zeros(batch_size, dtype=torch.long, device=device)
+        self.query_questions = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
+        self.query_responses = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
+        self.query_cat_nb = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
 
-        return qq_tensor, ql_tensor, qc_tensor, qu_tensor, mq_tensor, ml_tensor, mc_tensor, mu_tensor
+        self.query_cat_list = []
+        self.query_user_ids = torch.tensor([], dtype=torch.long, device=device)
+        self.query_question_ids = torch.tensor([], dtype=torch.long, device=device)
+        self.query_labels = torch.tensor([], dtype=torch.long, device=device)
+        self.query_category_ids = torch.tensor([], dtype=torch.long, device=device)
+
+        self.meta_users = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
+        self.meta_questions = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
+        self.meta_responses = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
+        self.meta_cat_nb = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
+        self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
+
+        self.device = device
+
+    @torch.jit.script_method
+    def update(self, actions: Tensor, t: int) -> None:
+        indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
+
+        qc_action_list: List[List[int]] = [outer[idx] for outer, idx in zip(self.query_cat_list, indices)]
+        flat_qc: List[int] = self.flatten_list(qc_action_list)
+        QC = torch.tensor(flat_qc, device=self.device).int()
+
+        # Assuming feedIMPACT_query is TorchScript-compatible or is wrapped properly
+        new_user_ids, new_question_ids, new_labels, new_category_ids = self.feedIMPACT_query(
+            self.query_questions[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+            self.query_responses[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+            self.query_cat_nb[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+            self.query_users, QC
+        )
+
+        tmp = self.query_meta_indices[self.row_idx, t]
+        self.query_meta_indices[self.row_idx, t] = self.query_meta_indices[self.row_idx, actions]
+        self.query_meta_indices[self.row_idx, actions] = tmp
+
+        # Add the new data to the set of submitted questions
+        self.query_user_ids = torch.cat((self.query_user_ids, new_user_ids), dim=0)
+        self.query_question_ids = torch.cat((self.query_question_ids, new_question_ids), dim=0)
+        self.query_labels = torch.cat((self.query_labels, new_labels), dim=0)
+        self.query_category_ids = torch.cat((self.query_category_ids, new_category_ids), dim=0)
+
+    @torch.jit.script_method
+    def feedIMPACT_query(self, QQ, QL, QC_NB, U, QC):
+
+        question_ids = torch.repeat_interleave(QQ, QC_NB)
+        user_ids = torch.repeat_interleave(U, QC_NB)
+        labels = torch.repeat_interleave(QL, QC_NB)
+
+        return user_ids, question_ids, labels, QC
+
+    @torch.jit.script_method
+    def feedIMPACT_meta(self):
+        MQ = self.meta_questions.reshape(-1)
+        ML = self.meta_responses.reshape(-1)
+        MC_NB = self.meta_cat_nb.reshape(-1)
+        MU = self.meta_users.reshape(-1)
+
+        question_ids = torch.repeat_interleave(MQ, MC_NB)
+        user_ids = torch.repeat_interleave(MU, MC_NB)
+        labels = torch.repeat_interleave(ML, MC_NB)
+        category_ids = self.meta_categories
+
+        return user_ids, question_ids, labels, category_ids
+
+    @torch.jit.ignore
+    def flatten_list(self,qc_action_list: List[List[int]]) -> List[int]:
+        flat: List[int] = []
+        for sublist in qc_action_list:
+                flat.extend(sublist)
+        return flat
+
+
+
+
+

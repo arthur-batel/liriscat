@@ -10,11 +10,11 @@ class Random(AbstractSelectionStrategy):
         self.model = RandomModel()
         print(self.model)
 
-    def select_action(self,t,I,Lengths):
+    def select_action(self,t,env):
 
         # Generate random indices efficiently
-        remove_indices = torch.randint(t, Lengths.max(), size=Lengths.shape, device=self.device)
-        remove_indices = torch.remainder(remove_indices, Lengths-t) +t
+        remove_indices = torch.randint(t, env.query_len.max(), size=env.query_len.shape, device=self.device)
+        remove_indices = torch.remainder(remove_indices, env.query_len-t) +t
 
         return remove_indices
 

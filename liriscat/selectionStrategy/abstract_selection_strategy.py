@@ -92,7 +92,7 @@ class AbstractSelectionStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def select_action(self, qq_list, ql_list, qc_list):
+    def select_action(self, t, env):
         raise NotImplementedError
 
     @abstractmethod
@@ -176,50 +176,36 @@ class AbstractSelectionStrategy(ABC):
         pred_list = []
         label_list = []
 
-        for batch in valid_loader:
+        for batch_users_env in valid_loader:
 
-            # Unpack batch; ensure the collate_fn returns the expected order.
-            Lengths,I,U,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC,MU = batch
-            row_indices = torch.arange(I.size(0))
-
-            m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(MQ,ML,MC_NB,MU,MC)
+            # Prepare the meta set
+            m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(batch_users_env)
 
             for t in range(self.config['n_query']):
-                actions = self.select_action(t, I, Lengths)
 
-                qc_action_list = [outer[idx] for outer, idx in zip(qc_list, I[row_indices,actions].tolist())]
-                flat_qc = list(itertools.chain.from_iterable(qc_action_list))
-                QC = torch.tensor(flat_qc, device=self.device).int()
+                # Select the action (questio to submit)
+                actions = self.select_action(t, batch_users_env)
 
-                user_ids, question_ids, labels, categories = dataset.feedIMPACT(
-                    QQ[row_indices, I[row_indices, actions]], QL[row_indices, I[row_indices, actions]],
-                    QC_NB[row_indices, I[row_indices, actions]], U, QC, self.device)
+                batch_users_env.update(actions, t)
 
-                with torch.enable_grad():
-                    self.CDM.model.train()
-                    self.CDM.update_users(user_ids, question_ids, labels, categories)
-                    self.CDM.model.eval()
+            with torch.enable_grad():
+                self.CDM.model.train()
+                self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids, batch_users_env.query_labels, batch_users_env.query_category_ids)
+                self.CDM.model.eval()
 
-                preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+            preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
-                total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
-                loss_list.append(total_loss.detach())
+            total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
+            loss_list.append(total_loss.detach())
 
-                pred_list.append(preds)
-                label_list.append(m_labels)
+            pred_list.append(preds)
+            label_list.append(m_labels)
 
             pred_tensor = torch.cat(pred_list)
             label_tensor = torch.cat(label_list)
             mean_loss = torch.mean(torch.stack(loss_list))
 
             return mean_loss, self.valid_metric(pred_tensor, label_tensor)
-
-    def evaluate_test(self, tes_data: dataset.CATDataset):
-        """
-        Evaluate the model on the given data using the given metrics.
-        """
-        # for t in self.config['']
-        return None
 
     def train(self, train_data: dataset.CATDataset, valid_data: dataset.CATDataset):
         """Train the model."""
@@ -281,30 +267,17 @@ class AbstractSelectionStrategy(ABC):
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
-            for batch in train_loader:
+            for batch_users_env in train_loader:
 
-                # Unpack batch; ensure the collate_fn returns the expected order.
-                Lengths,I,U,QQ,QL,QC_NB,MQ,ML,MC_NB, qc_list, MC,MU = batch  # todo: also use the meta set for training
-                row_indices = torch.arange(I.size(0))
-                m_user_ids, m_question_ids, m_labels, m_category_ids = dataset.feedIMPACT_meta(MQ, ML, MC_NB, MU, MC)
+                m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
 
                 for t in range(self.config['n_query']):
 
-                    actions = self.select_action(t,I,Lengths)
+                    actions = self.select_action(t, batch_users_env)
 
-                    qc_action_list = [outer[idx] for outer, idx in zip(qc_list, I[row_indices,actions].tolist())]
+                    batch_users_env.update(actions, t)
 
-                    flat_qc = list(itertools.chain.from_iterable(qc_action_list))
-                    QC = torch.tensor(flat_qc, device=self.device).int()
-
-                    user_ids, question_ids, labels, category_ids = dataset.feedIMPACT(QQ[row_indices,I[row_indices,actions]],QL[row_indices,I[row_indices,actions]],QC_NB[row_indices,I[row_indices,actions]],U,QC, self.device)
-
-                    tmp = I[row_indices,t]
-                    I[row_indices, t] = I[row_indices,actions]
-                    I[row_indices, actions] = tmp
-
-
-                    self.CDM.update_users(user_ids, question_ids, labels, category_ids)
+                    self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids, batch_users_env.query_labels, batch_users_env.query_category_ids)
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
@@ -314,7 +287,7 @@ class AbstractSelectionStrategy(ABC):
                 with torch.no_grad(), torch.amp.autocast('cuda'):
                     valid_loss, valid_metric = self.evaluate_valid(valid_loader)
 
-                    print(valid_metric, valid_loss)
+                    logging.info(f'{valid_metric}, {valid_loss}')
 
                     with warnings.catch_warnings(record=True) as w:
                         warnings.simplefilter("always")
