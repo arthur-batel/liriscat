@@ -411,29 +411,30 @@ class EnvModule(torch.jit.ScriptModule):
         return self.meta_cat_nb.sum().item()
 
     def update(self, actions: Tensor, t: int) -> None:
-        indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
+        with torch.no_grad():
+            indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
 
-        qc_action_list: List[List[int]] = [outer[idx] for outer, idx in zip(self.query_cat_list, indices)]
-        flat_qc: List[int] = self.flatten_list(qc_action_list)
-        QC = torch.tensor(flat_qc, device=self.device).int()
+            qc_action_list: List[List[int]] = [outer[idx] for outer, idx in zip(self.query_cat_list, indices)]
+            flat_qc: List[int] = self.flatten_list(qc_action_list)
+            QC = torch.tensor(flat_qc, device=self.device).int()
 
-        # Assuming feedIMPACT_query is TorchScript-compatible or is wrapped properly
-        new_user_ids, new_question_ids, new_labels, new_category_ids = self.feedIMPACT_query(
-            self.query_questions[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-            self.query_responses[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-            self.query_cat_nb[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-            self.query_users, QC
-        )
+            # Assuming feedIMPACT_query is TorchScript-compatible or is wrapped properly
+            new_user_ids, new_question_ids, new_labels, new_category_ids = self.feedIMPACT_query(
+                self.query_questions[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+                self.query_responses[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+                self.query_cat_nb[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
+                self.query_users, QC
+            )
+    
+            tmp = self.query_meta_indices[self.row_idx, t]
+            self.query_meta_indices[self.row_idx, t] = self.query_meta_indices[self.row_idx, actions]
+            self.query_meta_indices[self.row_idx, actions] = tmp
 
-        tmp = self.query_meta_indices[self.row_idx, t]
-        self.query_meta_indices[self.row_idx, t] = self.query_meta_indices[self.row_idx, actions]
-        self.query_meta_indices[self.row_idx, actions] = tmp
-
-        # Add the new data to the set of submitted questions
-        self.query_user_ids = torch.cat((self.query_user_ids, new_user_ids), dim=0)
-        self.query_question_ids = torch.cat((self.query_question_ids, new_question_ids), dim=0)
-        self.query_labels = torch.cat((self.query_labels, new_labels), dim=0)
-        self.query_category_ids = torch.cat((self.query_category_ids, new_category_ids), dim=0)
+            # Add the new data to the set of submitted questions
+            self.query_user_ids = torch.cat((self.query_user_ids, new_user_ids), dim=0)
+            self.query_question_ids = torch.cat((self.query_question_ids, new_question_ids), dim=0)
+            self.query_labels = torch.cat((self.query_labels, new_labels), dim=0)
+            self.query_category_ids = torch.cat((self.query_category_ids, new_category_ids), dim=0)
 
     def feedIMPACT_query(self, QQ, QL, QC_NB, U, QC):
 
