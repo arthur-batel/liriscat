@@ -256,7 +256,7 @@ class AbstractSelectionStrategy(ABC):
             log_idx += batch_users_env.query_users.shape[0]
 
         # Compute metrics in one pass using a dictionary comprehension
-        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]))
+        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t])).cpu().item()
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
         results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_data)
@@ -277,8 +277,12 @@ class AbstractSelectionStrategy(ABC):
             case 'impact':
                 self.CDM.init_model(train_loader, valid_loader)
                 self.CDM.model.to(device, non_blocking=True)
+                if hasattr(torch, "compile"):
+                    self.CDM.model = torch.compile(self.CDM.model)
 
         self.model.to(device, non_blocking=True)
+        if hasattr(torch, "compile"):
+            self.model = torch.compile(self.model)
 
         logging.info('train on {}'.format(device))
         logging.info("-- START Training --")
@@ -313,9 +317,6 @@ class AbstractSelectionStrategy(ABC):
         epochs = self.config['num_epochs']
         eval_freq = self.config['eval_freq']
         patience = self.config['patience']
-
-        if hasattr(torch, "compile"):
-            self.model = torch.compile(self.model)
 
         valid_loader.split_query_meta(self.config['seed']) # split valid query qnd meta set one and for all epochs
 

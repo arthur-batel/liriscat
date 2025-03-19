@@ -410,7 +410,6 @@ class EnvModule(torch.jit.ScriptModule):
         """
         return self.meta_cat_nb.sum().item()
 
-    @torch.jit.script_method
     def update(self, actions: Tensor, t: int) -> None:
         indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
 
@@ -436,7 +435,6 @@ class EnvModule(torch.jit.ScriptModule):
         self.query_labels = torch.cat((self.query_labels, new_labels), dim=0)
         self.query_category_ids = torch.cat((self.query_category_ids, new_category_ids), dim=0)
 
-    @torch.jit.script_method
     def feedIMPACT_query(self, QQ, QL, QC_NB, U, QC):
 
         question_ids = torch.repeat_interleave(QQ, QC_NB)
@@ -445,7 +443,6 @@ class EnvModule(torch.jit.ScriptModule):
 
         return user_ids, question_ids, labels, QC
 
-    @torch.jit.script_method
     def feedIMPACT_meta(self):
         MQ = self.meta_questions.reshape(-1)
         ML = self.meta_responses.reshape(-1)
@@ -459,7 +456,6 @@ class EnvModule(torch.jit.ScriptModule):
 
         return user_ids, question_ids, labels, category_ids
 
-    @torch.jit.ignore
     def flatten_list(self,qc_action_list: List[List[int]]) -> List[int]:
         flat: List[int] = []
         for sublist in qc_action_list:
