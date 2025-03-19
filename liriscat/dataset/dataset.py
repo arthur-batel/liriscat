@@ -204,19 +204,16 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
             # or you could turn it into a small GPU tensor if you prefer.)
             self._qconcept_list_cache[qid] = concepts
 
+        self.rng = np.random.default_rng(self.query_seed)
+
     def __len__(self):
         'Denotes the total number of samples'
         return len(self.user_dict)
 
-
-    def __getitem__(self, index):
-        # return the data of the user reindexed in this dataset instance
-        # Warning : index is not the user id but the index of the user in the dataset!
-        'Generates one sample of data'
+    def generate_sample(self, index):
         data = self.user_dict[index]
 
-        rng = np.random.default_rng(index + self.query_seed)  # create a generator with a fixed seed
-        observed_index = rng.permutation(data['q_ids'].shape[0])
+        observed_index = (self.rng.permutation(data['q_ids'].shape[0]) + index) % data['q_ids'].shape[0]
         meta_index = observed_index[-self.config['n_query']:]
         query_index = observed_index[:-self.config['n_query']]
 
@@ -229,7 +226,6 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
             for q in data['q_ids'][query_index]
         ]
 
-
         meta_concepts_nb = torch.tensor(
             [self._qconcept_len_cache[q.item()] for q in data['q_ids'][meta_index]],
             device=self.device
@@ -241,8 +237,8 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
             )
         )
 
-        result = (self.user_idx2id[index],# int
-                    data['q_ids'][query_index],  # torch.Tensor
+        result = (self.user_idx2id[index],  # int
+                  data['q_ids'][query_index],  # torch.Tensor
                   data['labels'][query_index],  # torch.Tensor
                   qc,  # list of lists
                   query_concepts_nb,  # torch.Tensor
@@ -252,8 +248,15 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
                   mc,  # list of ints
                   meta_concepts_nb,  # torch.Tensor
                   )
-
         return result
+
+    def __getitem__(self, index):
+        # return the data of the user reindexed in this dataset instance
+        # Warning : index is not the user id but the index of the user in the dataset!
+        'Generates one sample of data'
+
+
+        return self.generate_sample(index)
 
 class evalDataset(CATDataset):
 
@@ -282,37 +285,10 @@ class evalDataset(CATDataset):
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
 
         for index in range(len(self)):
-            data = self.user_dict[index]
+            sample_tuple = self.generate_sample(index)
 
-            rng = np.random.default_rng(index + self.query_seed)  # create a generator with a fixed seed
-            observed_index = rng.permutation(data['q_ids'].shape[0])
-            meta_index = observed_index[-self.config['n_query']:]
-            query_index = observed_index[:-self.config['n_query']]
-
-            query_concepts_nb = torch.tensor(
-                [len(self.concept_map[question.item()]) for question in data['q_ids'][query_index]], device=self.device)
-            qc = [self.concept_map[question.item()] for question in data['q_ids'][query_index]]
-
-            meta_concepts_nb = torch.tensor(
-                [len(self.concept_map[question.item()]) for question in data['q_ids'][meta_index]], device=self.device)
-            mc = list(itertools.chain.from_iterable(
-                self.concept_map[question.item()] for question in data['q_ids'][meta_index]
-            ))
-
-            question_meta_data = data['q_ids'][meta_index]
-            self._meta_mask.index_put_(((self.user_idx2id[index]*torch.ones_like(question_meta_data, dtype=torch.long)), question_meta_data), torch.ones_like(question_meta_data, dtype=torch.bool))
-
-            self._precomputed_batch[index] = (self.user_idx2id[index],  # int
-                      data['q_ids'][query_index],  # torch.Tensor
-                      data['labels'][query_index],  # torch.Tensor
-                      qc,  # list of lists
-                      query_concepts_nb,  # torch.Tensor
-
-                      question_meta_data,  # torch.Tensor
-                      data['labels'][meta_index],  # torch.Tensor
-                      mc,  # list of ints
-                      meta_concepts_nb,  # torch.Tensor
-                      )
+            self._meta_mask.index_put_(((self.user_idx2id[index]*torch.ones_like(sample_tuple[5], dtype=torch.long)), sample_tuple[5]), torch.ones_like(sample_tuple[5], dtype=torch.bool))
+            self._precomputed_batch[index] = sample_tuple
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
