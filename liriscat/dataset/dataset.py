@@ -33,6 +33,7 @@ class Dataset(object):
         self._questions_id = df['item_id'].unique()  # Ids of the items in this dataset instance (after splitting)
         self._concepts_id = df[
             'dimension_id'].unique()  # Ids of the categorys in this dataset instance (after splitting)
+        self._n_meta = self._metadata['min_nb_users_logs'] // 5
 
         assert max(self._users_id) < self.n_users, \
             f'Require item ids renumbered : max user id = {max(self._users_id)}; nb users = {self.n_users}'
@@ -40,7 +41,7 @@ class Dataset(object):
             f'Require item ids renumbered : max item id = {max(self._questions_id)}; nb items = {self.n_questions}'
         assert max(self._concepts_id) < self.n_categories, \
             f'Require concept ids renumbered : max concept id = {max(self._concepts_id)}; nb categories= {self.n_categories}'
-        assert self._metadata['min_nb_users_logs'] // 5 >= self.config["n_query"], \
+        assert self._n_meta <= self._metadata['min_nb_users_logs'] - self.config["n_query"], \
             f'Some users have not enough logs to perform to submit {self.config["n_query"]} questions: min number of user logs = {self._metadata['min_nb_users_logs']}'
 
         self._torch_array = torch.from_numpy(df.to_numpy()).to(device=self.device)
@@ -109,6 +110,13 @@ class Dataset(object):
         @return: Total number of users in the dataset (before splitting)
         """
         return self._config
+
+    @property
+    def n_meta(self):
+        """
+        @return: Total number of users in the dataset (before splitting)
+        """
+        return self._n_meta
 
     @property
     def concept_map(self):
@@ -182,7 +190,7 @@ class Dataset(object):
 
 class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
 
-    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=False):
+    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=True):
         """
         Args:
             data: list, [(sid, qid, score)]
@@ -214,8 +222,8 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
         data = self.user_dict[index]
 
         observed_index = (self.rng.permutation(data['q_ids'].shape[0]) + index) % data['q_ids'].shape[0]
-        meta_index = observed_index[-self.config['n_query']:]
-        query_index = observed_index[:-self.config['n_query']]
+        meta_index = observed_index[-self.n_meta:]
+        query_index = observed_index[:self.config['n_query']]
 
         query_concepts_nb = torch.tensor(
             [self._qconcept_len_cache[q.item()] for q in data['q_ids'][query_index]],
@@ -236,6 +244,8 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
                 self._qconcept_list_cache[q.item()] for q in data['q_ids'][meta_index]
             )
         )
+
+
 
         result = (self.user_idx2id[index],  # int
                   data['q_ids'][query_index],  # torch.Tensor
@@ -260,14 +270,14 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
 
 class evalDataset(CATDataset):
 
-    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=False, pin_memory=False):
+    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=False, pin_memory=True):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        super().__init__(data, concept_map, metadata, config, batch_size, shuffle=shuffle, pin_memory=False)
+        super().__init__(data, concept_map, metadata, config, batch_size, shuffle=shuffle, pin_memory=pin_memory)
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
         self._precomputed_batch = {}
 
@@ -302,7 +312,7 @@ class CustomCollate(object):
 
     def __call__(self, batch):
 
-        env = EnvModule(len(batch), self.data.n_questions, self.data.config['n_query'], self.data.device)
+        env = EnvModule(len(batch), self.data.n_questions, self.data.n_meta, self.data.device)
 
         # Lists of lists to store the categories associated to each question and meta question
         qc_list = []
@@ -329,6 +339,7 @@ class CustomCollate(object):
 
             ### ----- Meta questions
             # Saving meta users, questions, responses and number of categories
+
             env.meta_users[i] = u*torch.ones_like(mq)
             env.meta_questions[i] = mq
             env.meta_responses[i] = ml
@@ -364,7 +375,7 @@ class EnvModule(torch.jit.ScriptModule):
     meta_categories: Tensor
     device: torch.device
 
-    def __init__(self, batch_size: int, n_questions: int, n_query: int, device: torch.device):
+    def __init__(self, batch_size: int, n_questions: int, n_meta: int, device: torch.device):
         super(EnvModule, self).__init__()
 
         # initialize state variables
@@ -384,10 +395,10 @@ class EnvModule(torch.jit.ScriptModule):
         self.query_labels = torch.tensor([], dtype=torch.long, device=device)
         self.query_category_ids = torch.tensor([], dtype=torch.long, device=device)
 
-        self.meta_users = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
-        self.meta_questions = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
-        self.meta_responses = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
-        self.meta_cat_nb = torch.zeros(batch_size, n_query, dtype=torch.long, device=device)
+        self.meta_users = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
+        self.meta_questions = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
+        self.meta_responses = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
+        self.meta_cat_nb = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
         self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
 
         self.device = device

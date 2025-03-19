@@ -256,7 +256,7 @@ class AbstractSelectionStrategy(ABC):
             log_idx += batch_users_env.query_users.shape[0]
 
         # Compute metrics in one pass using a dictionary comprehension
-        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t])).cpu().item()
+        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]))
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
         results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_data)
