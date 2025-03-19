@@ -8,11 +8,13 @@ import pandas as pd
 import numpy as np
 from math import pow
 import warnings
+from torch.utils import data
 
 import logging
 import sys
 from datetime import datetime
 
+from sklearn.metrics import roc_auc_score
 
 
 def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None):
@@ -237,17 +239,16 @@ def evaluate_doa(E, R, metadata, concept_map):
     q_len = np.array(list_q_len, dtype=np.int32)
 
     num_dim = metadata['num_dimension_id']
-    num_user = metadata['num_user_id']
 
     # Optionally ensure concept indices are in range inside _compute_doa:
     # You can either filter concept_indices there or ensure _preprocess_concept_map
     # doesn't produce out-of-range indices.
 
-    return _compute_doa(q_array, q_len, num_dim, E, concept_map_array, R, num_user)
+    return _compute_doa(q_array, q_len, num_dim, E, concept_map_array, R)
 
 
 @numba.jit(nopython=True, cache=True)
-def _compute_doa(q, q_len, num_dim, E, concept_map_array, R, num_user):
+def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
     s = np.zeros(shape=(1, num_dim))
     beta = np.zeros(shape=(1, num_dim))
 
@@ -290,3 +291,381 @@ def _preprocess_concept_map(list_concept_map, max_len):
         concept_map_array[i, :len(concepts)] = concepts  # Copy valid values into array
     return concept_map_array
 
+
+def compute_doa(emb: torch.Tensor, test_data):
+    return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
+                                      test_data.concept_map))
+
+def compute_pc_er(emb, test_data):
+    U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
+                                                                                  non_blocking=True)
+    U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
+                                                                                 non_blocking=True)
+
+    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False)
+    for data_batch in data_loader:
+        user_ids = data_batch[:, 0].long()
+        item_ids = data_batch[:, 1].long()
+        labels = data_batch[:, 2]
+        dim_ids = data_batch[:, 3].long()
+
+        U_resp_sum[user_ids, dim_ids] += labels
+        U_resp_nb[user_ids, dim_ids] += torch.ones_like(labels)
+
+    U_ave = U_resp_sum / U_resp_nb
+
+    return pc_er(test_data.n_categories, U_ave, emb).cpu().item()
+
+
+@torch.jit.script
+def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the average correlation across dimensions between U_ave and emb.
+    Both U_ave and emb should be [num_user, concept_n] tensors.
+    concept_n: number of concepts
+    U_ave: FloatTensor [num_user, concept_n]
+    emb: FloatTensor [num_user, concept_n]
+
+    Returns:
+        c: A 0-dim tensor (scalar) representing the average correlation.
+    """
+
+    # Initialize counters as tensors to allow JIT compatibility
+    c = torch.tensor(0.0, device=U_ave.device)
+    s = torch.tensor(0.0, device=U_ave.device)
+
+    for dim in range(concept_n):
+        mask = ~torch.isnan(U_ave[:, dim])
+        U_dim_masked = U_ave[:, dim][mask].unsqueeze(1)
+        Emb_dim_masked = emb[:, dim][mask].unsqueeze(1)
+
+        corr = torch.corrcoef(torch.concat([U_dim_masked, Emb_dim_masked], dim=1).T)[0][1]
+
+        if not torch.isnan(corr):
+            c += corr
+            s += 1
+    c /= s
+    return c
+
+
+def compute_rm(emb: torch.Tensor, test_data):
+    logging.warning("Computing RM on meta and QUERY set")
+    concept_array, concept_lens = preprocess_concept_map(test_data.concept_map)
+    r= compute_rm_fold(emb.cpu().numpy(), test_data.df.to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
+                                                                 "dimension_id": int}), concept_array, concept_lens)
+    logging.info(f"RM: {r}")
+    return r
+
+def preprocess_concept_map(concept_map):
+    # concept_map: dict[item_id -> list of concept_ids]
+    items = sorted(concept_map.keys())
+    max_len = max(len(v) for v in concept_map.values())
+
+    concept_array = np.full((max(items) + 1, max_len), -1, dtype=np.int32)
+    concept_lens = np.zeros(max(items) + 1, dtype=np.int32)
+
+    for k, v in concept_map.items():
+        v = np.array(v, dtype=np.int32)
+        concept_array[k, :len(v)] = v
+        concept_lens[k] = len(v)
+
+    return concept_array, concept_lens
+
+@numba.njit
+def compute_rm_fold(emb, d, concept_array, concept_lens):
+    # emb: (n_users, n_dims)
+    # d: structured array with fields (student_id, item_id, correct, concept_id)
+    # concept_array, concept_lens: from preprocess
+
+    n_users, n_dims = emb.shape
+    U_resp_sum = np.zeros((n_users, n_dims), dtype=np.float64)
+    U_resp_nb = np.zeros((n_users, n_dims), dtype=np.float64)
+
+    # Fill U_resp_sum and U_resp_nb
+    for rec in d:
+        student_id = rec[0]
+        item_id = rec[1]
+        correct_val = rec[2]
+        length = concept_lens[item_id]
+        for i in range(length):
+            cid = concept_array[item_id, i]
+            U_resp_sum[student_id, cid] += correct_val
+            U_resp_nb[student_id, cid] += 1.0
+
+    # Compute U_ave = U_resp_sum / U_resp_nb where nb>0 else 0
+    U_ave = np.zeros((n_users, n_dims), dtype=np.float64)
+    for i in range(n_users):
+        for j in range(n_dims):
+            if U_resp_nb[i, j] > 0:
+                U_ave[i, j] = U_resp_sum[i, j] / U_resp_nb[i, j]
+            else:
+                U_ave[i, j] = 0.0
+
+    # Build u_array and e_array
+    # Condition: user answered any question => at least one dim in U_ave[i_user] != 0.0
+    # Also handle NaNs: If any appear, handle them manually
+    u_list = []
+    e_list = []
+    for i_user in range(n_users):
+        # Check if user answered any question
+        answered_any = False
+        for j in range(n_dims):
+            val = U_ave[i_user, j]
+            # NaN check
+            if val != val:  # val != val means val is NaN
+                # Replace NaN with 0
+                U_ave[i_user, j] = 0.0
+            if U_resp_nb[i_user, j] > 0:
+                answered_any = True
+
+        if answered_any:
+            # Create copies to avoid modifying emb/U_ave arrays directly
+            u_vec = U_ave[i_user].copy()
+            e_vec = emb[i_user].copy()
+
+            # If a dimension not answered => it's already 0.0 in U_ave
+            # Set corresponding dimension in e_vec to 0 if not answered:
+            # Actually we already know unanswered are 0 in U_ave. We'll do same for e_vec:
+            for j in range(n_dims):
+                if U_resp_nb[i_user, j] == 0:
+                    e_vec[j] = 0.0
+
+            u_list.append(u_vec)
+            e_list.append(e_vec)
+
+    if len(u_list) == 0:
+        # No users answered anything
+        return np.nan
+
+    # Convert lists to arrays
+    # Numba cannot directly convert list of arrays if their shape is known.
+    # But here each element should have the same shape: (n_dims,)
+    # We'll allocate arrays directly:
+    n_users_filtered = len(u_list)
+    u_array = np.zeros((n_users_filtered, n_dims), dtype=np.float64)
+    e_array = np.zeros((n_users_filtered, n_dims), dtype=np.float64)
+    for i in range(n_users_filtered):
+        for j in range(n_dims):
+            u_array[i, j] = u_list[i][j]
+            e_array[i, j] = e_list[i][j]
+
+    c = 0.0
+    s = 0
+
+    # For each dimension:
+    # We must extract the users who answered this dimension (u_array[i,dim] !=0)
+    # Then compute covariance and do sorting logic
+    for dim in range(n_dims):
+        # Count how many users answered this dim
+        count_true = 0
+        for i_user in range(n_users_filtered):
+            if u_array[i_user, dim] != 0.0:
+                count_true += 1
+
+        if count_true == 0:
+            continue
+
+        # Extract those users' responses
+        X_u = np.empty(count_true, dtype=np.float64)
+        X_e = np.empty(count_true, dtype=np.float64)
+        idx_pos = 0
+        for i_user in range(n_users_filtered):
+            if u_array[i_user, dim] != 0.0:
+                X_u[idx_pos] = u_array[i_user, dim]
+                X_e[idx_pos] = e_array[i_user, dim]
+                idx_pos += 1
+
+        # Compute covariance
+        cov_val = compute_cov(X_u, X_e)
+        if np.isnan(cov_val):
+            continue
+
+        if cov_val > 0:
+            # Sort both arrays
+            X_u_sorted = np.sort(X_u)
+            X_e_sorted = np.sort(X_e)
+            cov_star = compute_cov(X_u_sorted, X_e_sorted)
+            if np.isnan(cov_star) or cov_star == 0:
+                # If cov_star is zero or NaN, handle gracefully
+                continue
+            rm = cov_val / cov_star
+        elif cov_val == 0:
+            rm = 0.0
+        else:
+            # cov_val < 0
+            X_u_sorted = np.sort(X_u)
+            X_e_sorted = np.sort(X_e)
+            X_e_reversed = reverse_array(X_e_sorted)
+            cov_prime = compute_cov(X_u_sorted, X_e_reversed)
+            if np.isnan(cov_prime) or cov_prime == 0:
+                continue
+            rm = -cov_val / cov_prime
+
+        c += rm
+        s += 1
+
+    if s == 0:
+        return np.nan
+    return c / s
+
+@numba.njit
+def compute_cov(x, y):
+    # Compute sample covariance (same as np.cov(x,y)[0,1]) with denominator (N-1)
+    n = x.size
+    if n < 2:
+        return np.nan
+    mx = 0.0
+    my = 0.0
+    for i in range(n):
+        mx += x[i]
+        my += y[i]
+    mx /= n
+    my /= n
+    s = 0.0
+    for i in range(n):
+        s += (x[i] - mx) * (y[i] - my)
+    return s / (n - 1)
+
+@numba.njit
+def reverse_array(arr):
+    n = arr.size
+    res = np.empty(n, dtype=arr.dtype)
+    for i in range(n):
+        res[i] = arr[n - 1 - i]
+    return res
+
+
+
+@torch.jit.script
+def root_mean_squared_error(y_true, y_pred):
+    """
+    Compute the rmse metric (Regression)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The rmse metric.
+    """
+    return torch.sqrt(torch.mean(torch.square(y_true - y_pred)))
+
+
+@torch.jit.script
+def mean_absolute_error(y_true, y_pred):
+    """
+    Compute the mae metric (Regression)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The mae metric.
+    """
+    return torch.mean(torch.abs(y_true - y_pred))
+
+
+@torch.jit.script
+def r2(gt, pd):
+    """
+    Compute the r2 metric (Regression)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The r2 metric.
+    """
+
+    mean = torch.mean(gt)
+    sst = torch.sum(torch.square(gt - mean))
+    sse = torch.sum(torch.square(gt - pd))
+
+    r2 = 1 - sse / sst
+
+    return r2
+
+
+@torch.jit.script
+def micro_ave_accuracy(y_true, y_pred):
+    """
+    Compute the micro-averaged accuracy (Classification)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The micro-averaged precision.
+    """
+    return torch.mean((y_true == y_pred).float())
+
+
+@torch.jit.script
+def micro_ave_precision(y_true, y_pred):
+    """
+    Compute the micro-averaged precision (Binary classification)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The micro-averaged precision.
+    """
+    true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
+    predicted_positives = torch.sum(y_pred == 2).float()
+    return true_positives / predicted_positives
+
+
+@torch.jit.script
+def micro_ave_recall(y_true, y_pred):
+    """
+    Compute the micro-averaged recall (Binary classification)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The micro-averaged recall.
+    """
+    true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
+    actual_positives = torch.sum(y_true == 2).float()
+    return true_positives / actual_positives
+
+
+@torch.jit.script
+def micro_ave_f1(y_true, y_pred):
+    """
+    Compute the micro-averaged f1 (Binary classification)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The micro-averaged f1.
+    """
+    precision = micro_ave_precision(y_true, y_pred)
+    recall = micro_ave_recall(y_true, y_pred)
+    return 2 * (precision * recall) / (precision + recall)
+
+
+def micro_ave_auc(y_true, y_pred):
+    """
+    Compute the micro-averaged roc-auc (Binary classification)
+
+    Args:
+        y_true (Tensor): Ground truth labels.
+        y_pred (Tensor): Predicted labels.
+
+    Returns:
+        Tensor: The micro-averaged roc-auc.
+    """
+    y_true = y_true.cpu().int().numpy()
+    y_pred = y_pred.cpu().int().numpy()
+    roc_auc = roc_auc_score(y_true.ravel(), y_pred.ravel(), average='micro')
+    return torch.tensor(roc_auc)

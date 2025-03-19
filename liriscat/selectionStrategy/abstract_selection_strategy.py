@@ -2,6 +2,8 @@ import functools
 import itertools
 import warnings
 from abc import ABC, abstractmethod
+
+import numba
 import numpy as np
 from itertools import chain
 from stat import S_IREAD
@@ -45,34 +47,34 @@ class AbstractSelectionStrategy(ABC):
 
         self.pred_metrics = config['pred_metrics'] if config['pred_metrics'] else ['rmse', 'mae']
         self.pred_metric_functions = {
-            'rmse': root_mean_squared_error,
-            'mae': mean_absolute_error,
-            'r2': r2,
-            'mi_acc': micro_ave_accuracy,
-            'mi_prec': micro_ave_precision,
-            'mi_rec': micro_ave_recall,
-            'mi_f1': micro_ave_f1,
-            'mi_auc': micro_ave_auc,
+            'rmse': utils.root_mean_squared_error,
+            'mae': utils.mean_absolute_error,
+            'r2': utils.r2,
+            'mi_acc': utils.micro_ave_accuracy,
+            'mi_prec': utils.micro_ave_precision,
+            'mi_rec': utils.micro_ave_recall,
+            'mi_f1': utils.micro_ave_f1,
+            'mi_auc': utils.micro_ave_auc,
         }
         assert set(self.pred_metrics).issubset(self.pred_metric_functions.keys())
 
         self.profile_metrics = config['profile_metrics'] if config['profile_metrics'] else ['pc-er', 'doa']
         self.profile_metric_functions = {
-            'pc-er': compute_pc_er,
-            'doa': compute_doa,
-            'rm': compute_rm,
+            'pc-er': utils.compute_pc_er,
+            'doa': utils.compute_doa,
+            'rm': utils.compute_rm,
         }
         assert set(self.profile_metrics).issubset(self.profile_metric_functions.keys())
 
         match config['valid_metric']:
             case 'rmse':
-                self.valid_metric = root_mean_squared_error
+                self.valid_metric = utils.root_mean_squared_error
                 self.metric_sign = 1  # Metric to minimize :1; metric to maximize :-1
             case 'mae':
-                self.valid_metric = mean_absolute_error
+                self.valid_metric = utils.mean_absolute_error
                 self.metric_sign = 1
             case 'mi_acc':
-                self.valid_metric = micro_ave_accuracy
+                self.valid_metric = utils.micro_ave_accuracy
                 self.metric_sign = -1
 
         match config['CDM']:
@@ -187,7 +189,7 @@ class AbstractSelectionStrategy(ABC):
 
             for t in range(self.config['n_query']):
 
-                # Select the action (questio to submit)
+                # Select the action (question to submit)
                 actions = self.select_action(t, batch_users_env)
 
                 batch_users_env.update(actions, t)
@@ -214,7 +216,7 @@ class AbstractSelectionStrategy(ABC):
     @evaluation_param
     @evaluation_state
     def evaluate_test(self, test_data: dataset.CATDataset):
-        """
+        """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
 
@@ -262,7 +264,7 @@ class AbstractSelectionStrategy(ABC):
 
         return results_pred, results_profiles
 
-    def train(self, train_data: dataset.CATDataset, valid_data: dataset.CATDataset):
+    def train(self, train_loader: dataset.CATDataset, valid_loader: dataset.evalDataset):
         """Train the model."""
 
         lr = self.config['learning_rate']
@@ -273,7 +275,7 @@ class AbstractSelectionStrategy(ABC):
 
         match self.config['CDM']:
             case 'impact':
-                self.CDM.init_model(train_data, valid_data)
+                self.CDM.init_model(train_loader, valid_loader)
                 self.CDM.model.to(device, non_blocking=True)
 
         self.model.to(device, non_blocking=True)
@@ -287,11 +289,6 @@ class AbstractSelectionStrategy(ABC):
 
         self.best_S_params = self.get_params()
         self.best_CDM_params = self.CDM.get_params()
-
-        train_loader = data.DataLoader(train_data, collate_fn=dataset.CustomCollate(train_data), batch_size=batch_size,
-                                       shuffle=True, pin_memory=False)
-        valid_loader = data.DataLoader(valid_data, collate_fn=dataset.CustomCollate(valid_data), batch_size=10000,
-                                       shuffle=False, pin_memory=False)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
@@ -320,7 +317,11 @@ class AbstractSelectionStrategy(ABC):
         if hasattr(torch, "compile"):
             self.model = torch.compile(self.model)
 
+        valid_loader.split_query_meta(self.config['seed']) # split valid query qnd meta set one and for all epochs
+
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
+
+            train_loader.set_query_seed(ep) # changes the meta and query set for each epoch
 
             for batch_users_env in train_loader:
 
@@ -360,199 +361,3 @@ class AbstractSelectionStrategy(ABC):
 
         self.model.load_state_dict(self.best_model_params)
 
-
-def compute_pc_er(emb, test_data):
-    U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
-                                                                                  non_blocking=True)
-    U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
-                                                                                 non_blocking=True)
-
-    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False)
-    for data_batch in data_loader:
-        user_ids = data_batch[:, 0].long()
-        item_ids = data_batch[:, 1].long()
-        labels = data_batch[:, 2]
-        dim_ids = data_batch[:, 3].long()
-
-        U_resp_sum[user_ids, dim_ids] += labels
-        U_resp_nb[user_ids, dim_ids] += torch.ones_like(labels)
-
-    U_ave = U_resp_sum / U_resp_nb
-
-    return pc_er(test_data.n_categories, U_ave, emb).cpu().item()
-
-
-@torch.jit.script
-def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tensor:
-    """
-    Compute the average correlation across dimensions between U_ave and emb.
-    Both U_ave and emb should be [num_user, concept_n] tensors.
-    concept_n: number of concepts
-    U_ave: FloatTensor [num_user, concept_n]
-    emb: FloatTensor [num_user, concept_n]
-
-    Returns:
-        c: A 0-dim tensor (scalar) representing the average correlation.
-    """
-
-    # Initialize counters as tensors to allow JIT compatibility
-    c = torch.tensor(0.0, device=U_ave.device)
-    s = torch.tensor(0.0, device=U_ave.device)
-
-    for dim in range(concept_n):
-        mask = ~torch.isnan(U_ave[:, dim])
-        U_dim_masked = U_ave[:, dim][mask].unsqueeze(1)
-        Emb_dim_masked = emb[:, dim][mask].unsqueeze(1)
-
-        corr = torch.corrcoef(torch.concat([U_dim_masked, Emb_dim_masked], dim=1).T)[0][1]
-
-        if not torch.isnan(corr):
-            c += corr
-            s += 1
-    c /= s
-    return c
-
-
-def compute_rm(emb: torch.Tensor, test_data):
-    concept_array, concept_lens = utils.preprocess_concept_map(test_data.concept_map)
-    return utils.compute_rm_fold(emb.cpu().numpy(), test_data.raw_data, concept_array, concept_lens)
-
-
-def compute_doa(emb: torch.Tensor, test_data):
-    return np.mean(utils.evaluate_doa(emb.cpu().numpy(), test_data.log_tensor.cpu().numpy(), test_data.metadata,
-                                      test_data.concept_map))
-
-
-@torch.jit.script
-def root_mean_squared_error(y_true, y_pred):
-    """
-    Compute the rmse metric (Regression)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The rmse metric.
-    """
-    return torch.sqrt(torch.mean(torch.square(y_true - y_pred)))
-
-
-@torch.jit.script
-def mean_absolute_error(y_true, y_pred):
-    """
-    Compute the mae metric (Regression)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The mae metric.
-    """
-    return torch.mean(torch.abs(y_true - y_pred))
-
-
-@torch.jit.script
-def r2(gt, pd):
-    """
-    Compute the r2 metric (Regression)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The r2 metric.
-    """
-
-    mean = torch.mean(gt)
-    sst = torch.sum(torch.square(gt - mean))
-    sse = torch.sum(torch.square(gt - pd))
-
-    r2 = 1 - sse / sst
-
-    return r2
-
-
-@torch.jit.script
-def micro_ave_accuracy(y_true, y_pred):
-    """
-    Compute the micro-averaged accuracy (Classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged precision.
-    """
-    return torch.mean((y_true == y_pred).float())
-
-
-@torch.jit.script
-def micro_ave_precision(y_true, y_pred):
-    """
-    Compute the micro-averaged precision (Binary classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged precision.
-    """
-    true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
-    predicted_positives = torch.sum(y_pred == 2).float()
-    return true_positives / predicted_positives
-
-
-@torch.jit.script
-def micro_ave_recall(y_true, y_pred):
-    """
-    Compute the micro-averaged recall (Binary classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged recall.
-    """
-    true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
-    actual_positives = torch.sum(y_true == 2).float()
-    return true_positives / actual_positives
-
-
-@torch.jit.script
-def micro_ave_f1(y_true, y_pred):
-    """
-    Compute the micro-averaged f1 (Binary classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged f1.
-    """
-    precision = micro_ave_precision(y_true, y_pred)
-    recall = micro_ave_recall(y_true, y_pred)
-    return 2 * (precision * recall) / (precision + recall)
-
-
-def micro_ave_auc(y_true, y_pred):
-    """
-    Compute the micro-averaged roc-auc (Binary classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged roc-auc.
-    """
-    y_true = y_true.cpu().int().numpy()
-    y_pred = y_pred.cpu().int().numpy()
-    roc_auc = roc_auc_score(y_true.ravel(), y_pred.ravel(), average='micro')
-    return torch.tensor(roc_auc)

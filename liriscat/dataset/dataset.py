@@ -8,6 +8,7 @@ from torch import Tensor
 import torch.jit
 from typing import List
 import itertools
+from torch.utils.data import DataLoader
 
 
 
@@ -179,20 +180,34 @@ class Dataset(object):
         return _user_dict, _user_id2idx, _user_idx2id
 
 
-class CATDataset(Dataset, data.dataset.Dataset):
+class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
 
-    def __init__(self, data, concept_map, metadata, config):
+    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=False):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        super().__init__(data, concept_map, metadata, config)
+        Dataset.__init__(self,data, concept_map, metadata, config)
+        DataLoader.__init__(self, dataset=self, collate_fn=CustomCollate(self), batch_size=batch_size, shuffle=shuffle,
+                         pin_memory=pin_memory)
+
+        self._qconcept_len_cache = {}
+        self._qconcept_list_cache = {}
+
+        for qid, concepts in self.concept_map.items():
+
+            self._qconcept_len_cache[qid] = len(concepts)
+
+            # Save the concept list. (Remains on CPU as a Python list,
+            # or you could turn it into a small GPU tensor if you prefer.)
+            self._qconcept_list_cache[qid] = concepts
 
     def __len__(self):
         'Denotes the total number of samples'
         return len(self.user_dict)
+
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -206,14 +221,25 @@ class CATDataset(Dataset, data.dataset.Dataset):
         query_index = observed_index[:-self.config['n_query']]
 
         query_concepts_nb = torch.tensor(
-            [len(self.concept_map[question.item()]) for question in data['q_ids'][query_index]], device=self.device)
-        qc = [self.concept_map[question.item()] for question in data['q_ids'][query_index]]
+            [self._qconcept_len_cache[q.item()] for q in data['q_ids'][query_index]],
+            device=self.device
+        )
+        qc = [
+            self._qconcept_list_cache[q.item()]  # returns a Python list
+            for q in data['q_ids'][query_index]
+        ]
+
 
         meta_concepts_nb = torch.tensor(
-            [len(self.concept_map[question.item()]) for question in data['q_ids'][meta_index]], device=self.device)
-        mc = list(itertools.chain.from_iterable(
-            self.concept_map[question.item()] for question in data['q_ids'][meta_index]
-        ))
+            [self._qconcept_len_cache[q.item()] for q in data['q_ids'][meta_index]],
+            device=self.device
+        )
+
+        mc = list(
+            itertools.chain.from_iterable(
+                self._qconcept_list_cache[q.item()] for q in data['q_ids'][meta_index]
+            )
+        )
 
         result = (self.user_idx2id[index],# int
                     data['q_ids'][query_index],  # torch.Tensor
@@ -228,6 +254,71 @@ class CATDataset(Dataset, data.dataset.Dataset):
                   )
 
         return result
+
+class evalDataset(CATDataset):
+
+    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=False, pin_memory=False):
+        """
+        Args:
+            data: list, [(sid, qid, score)]
+            concept_map: dict, concept map {qid: cid}
+            metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
+        """
+        super().__init__(data, concept_map, metadata, config, batch_size, shuffle=shuffle, pin_memory=False)
+        self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
+        self._precomputed_batch = {}
+
+    @property
+    def meta_mask(self):
+        return self._meta_mask
+
+    @property
+    def meta_tensor(self):
+        return self.log_tensor * self.meta_mask
+
+    def split_query_meta(self, query_seed):
+
+        self.set_query_seed(query_seed)
+        self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
+
+        for index in range(len(self)):
+            data = self.user_dict[index]
+
+            rng = np.random.default_rng(index + self.query_seed)  # create a generator with a fixed seed
+            observed_index = rng.permutation(data['q_ids'].shape[0])
+            meta_index = observed_index[-self.config['n_query']:]
+            query_index = observed_index[:-self.config['n_query']]
+
+            query_concepts_nb = torch.tensor(
+                [len(self.concept_map[question.item()]) for question in data['q_ids'][query_index]], device=self.device)
+            qc = [self.concept_map[question.item()] for question in data['q_ids'][query_index]]
+
+            meta_concepts_nb = torch.tensor(
+                [len(self.concept_map[question.item()]) for question in data['q_ids'][meta_index]], device=self.device)
+            mc = list(itertools.chain.from_iterable(
+                self.concept_map[question.item()] for question in data['q_ids'][meta_index]
+            ))
+
+            question_meta_data = data['q_ids'][meta_index]
+            self._meta_mask.index_put_(((self.user_idx2id[index]*torch.ones_like(question_meta_data, dtype=torch.long)), question_meta_data), torch.ones_like(question_meta_data, dtype=torch.bool))
+
+            self._precomputed_batch[index] = (self.user_idx2id[index],  # int
+                      data['q_ids'][query_index],  # torch.Tensor
+                      data['labels'][query_index],  # torch.Tensor
+                      qc,  # list of lists
+                      query_concepts_nb,  # torch.Tensor
+
+                      question_meta_data,  # torch.Tensor
+                      data['labels'][meta_index],  # torch.Tensor
+                      mc,  # list of ints
+                      meta_concepts_nb,  # torch.Tensor
+                      )
+
+    def __getitem__(self, index):
+        # return the data of the user reindexed in this dataset instance
+        # Warning : index is not the user id but the index of the user in the dataset!
+
+        return self._precomputed_batch[index]
 
 class CustomCollate(object):
     def __init__(self, data: CATDataset):
