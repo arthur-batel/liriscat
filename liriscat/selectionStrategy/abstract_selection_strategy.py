@@ -235,7 +235,6 @@ class AbstractSelectionStrategy(ABC):
 
             for t in range(self.config['n_query']):
 
-
                 # Select the action (question to submit)
                 actions = self.select_action(t, batch_users_env)
 

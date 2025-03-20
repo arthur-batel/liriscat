@@ -477,12 +477,6 @@ class EnvModule:
 
         return user_ids, question_ids, labels, category_ids
 
-    def flatten_list(self,qc_action_list: List[List[int]]) -> List[int]:
-        flat: List[int] = []
-        for sublist in qc_action_list:
-                flat.extend(sublist)
-        return flat
-
 class EnvQueryDataset(Dataset):
     """
     Bridge class transforming the set of submitted question into a torch.utils.data.Dataset
