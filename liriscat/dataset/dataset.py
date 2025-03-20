@@ -191,6 +191,9 @@ class Dataset(object):
 
 
 class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
+    """
+    Train dataset
+    """
 
     def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=True):
         """
@@ -271,6 +274,9 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
         return self.generate_sample(index)
 
 class evalDataset(CATDataset):
+    """
+    valid and test dataset
+    """
 
     def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=False, pin_memory=True):
         """
@@ -299,7 +305,11 @@ class evalDataset(CATDataset):
         for index in range(len(self)):
             sample_tuple = self.generate_sample(index)
 
-            self._meta_mask.index_put_(((self.user_idx2id[index]*torch.ones_like(sample_tuple[5], dtype=torch.long)), sample_tuple[5]), torch.ones_like(sample_tuple[5], dtype=torch.bool))
+            self._meta_mask.index_put_(
+                (torch.full(sample_tuple[5].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
+                 sample_tuple[5]),
+                torch.ones_like(sample_tuple[5], dtype=torch.bool)
+            )
             self._precomputed_batch[index] = sample_tuple
 
     def __getitem__(self, index):
@@ -342,7 +352,7 @@ class CustomCollate(object):
             ### ----- Meta questions
             # Saving meta users, questions, responses and number of categories
 
-            env.meta_users[i] = u*torch.ones_like(mq)
+            env.meta_users[i] = torch.full(mq.shape, u, dtype=torch.long, device=self.data.device)
             env.meta_questions[i] = mq
             env.meta_responses[i] = ml
             env.meta_cat_nb[i] = mc_nb
@@ -372,11 +382,11 @@ class EnvModule:
         self.row_idx = torch.arange(self.query_meta_indices.size(0))
 
         # Initialize attributes with proper tensors
-        self.query_len = torch.zeros(batch_size, dtype=torch.long, device=device)
-        self.query_users = torch.zeros(batch_size, dtype=torch.long, device=device)
-        self.query_questions = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
-        self.query_responses = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
-        self.query_cat_nb = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_len = torch.empty(batch_size, dtype=torch.long, device=device)
+        self.query_users = torch.empty(batch_size, dtype=torch.long, device=device)
+        self.query_questions = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_responses = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_cat_nb = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
 
         self.query_cat_list = []
         self.query_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
@@ -386,10 +396,10 @@ class EnvModule:
 
         self.current_idx = 0
 
-        self.meta_users = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_questions = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_responses = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_cat_nb = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
         self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
 
         self.device = device
