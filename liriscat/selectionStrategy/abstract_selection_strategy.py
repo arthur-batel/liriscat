@@ -196,8 +196,7 @@ class AbstractSelectionStrategy(ABC):
 
             with torch.enable_grad():
                 self.CDM.model.train()
-                user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
-                self.CDM.update_users(user_ids, question_ids, labels, categories)
+                self.CDM.update_users(batch_users_env.feed_IMPACT_query())
                 self.CDM.model.eval()
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -212,7 +211,7 @@ class AbstractSelectionStrategy(ABC):
             label_tensor = torch.cat(label_list)
             mean_loss = torch.mean(torch.stack(loss_list))
 
-            return mean_loss, self.valid_metric(pred_tensor, label_tensor)
+        return mean_loss, self.valid_metric(pred_tensor, label_tensor)
 
     @evaluation_param
     @evaluation_state
@@ -244,8 +243,7 @@ class AbstractSelectionStrategy(ABC):
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
-                    self.CDM.update_users(user_ids, question_ids, labels, categories)
+                    self.CDM.update_users(batch_users_env.feed_IMPACT_query())
                     self.CDM.model.eval()
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -334,8 +332,8 @@ class AbstractSelectionStrategy(ABC):
                     actions = self.select_action(t, batch_users_env)
 
                     batch_users_env.update(actions, t)
-                    user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
-                    self.CDM.update_users(user_ids, question_ids, labels, categories)
+
+                    self.CDM.update_users(batch_users_env.feed_IMPACT_query())
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)

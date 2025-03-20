@@ -9,6 +9,9 @@ import torch.utils.data as data
 from IMPACT.model.abstract_model import AbstractModel
 from IMPACT.dataset import *
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
+from liriscat import dataset
 
 import warnings
 import torch
@@ -424,7 +427,7 @@ class IMPACT(AbstractModel):
 
         super().init_model(train_data, valid_data)
 
-        self.user_params_optimizer = torch.optim.SGD(self.model.users_emb.parameters(), lr=0.001) #todo : adapt the learning rate
+        self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(), lr=0.0001) #todo : adapt the learning rate
         self.params_optimizer = torch.optim.Adam(self.model.parameters(),lr=0.0001)  # todo : adapt the learning rate
 
         # Reduce the learning rate when a metric has stopped improving
@@ -495,14 +498,14 @@ class IMPACT(AbstractModel):
 
         return mean_loss, self.valid_metric(pred_tensor, label_tensor)
 
-    def _compute_loss(self, users_id, items_id, concepts_id, labels):
+    def _compute_loss(self, users_id, items_id, category_ids, labels):
         device = self.config['device']
         beta = 0.5
 
         lambda_param = self.config['lambda']
 
         u_emb, im_emb_prime, i0_emb_prime, in_emb_prime, W_t = self.model.get_embeddings(users_id, items_id,
-                                                                                         concepts_id)
+                                                                                         category_ids)
 
         L1, L2, L3 = self.loss(u_emb=u_emb, im_emb_prime=im_emb_prime, i0_emb_prime=i0_emb_prime,
                                in_emb_prime=in_emb_prime, W_t=W_t,
@@ -511,7 +514,7 @@ class IMPACT(AbstractModel):
                                diff_mask=self.model.diff_mask[items_id],
                                diff_mask2=self.model.diff_mask2[items_id],
                                users_id=users_id, items_id=items_id,
-                               concepts_id=concepts_id, R=self.model.R, users_emb=self.model.users_emb.weight)
+                               concepts_id=category_ids, R=self.model.R, users_emb=self.model.users_emb.weight)
 
         R = self.model.get_regularizer()
 
@@ -543,18 +546,25 @@ class IMPACT(AbstractModel):
         self.params_scaler.step(self.params_optimizer)
         self.params_scaler.update()
 
-    def update_users(self,user_ids, question_ids, labels, categories) :
+    def update_users(self,query_data) :
+        data = dataset.EnvQueryDataset(query_data)
+        dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
         for _ in range(5):
             self.user_params_optimizer.zero_grad()
 
+            for batch in dataloader:
+                user_ids = batch["user_ids"]
+                question_ids = batch["question_ids"]
+                labels = batch["labels"]
+                category_ids = batch["category_ids"]
 
-            with torch.amp.autocast('cuda'):
-                loss = self._compute_loss(user_ids, question_ids, categories, labels)
+                with torch.amp.autocast('cuda'):
+                    loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
 
-            self.user_params_scaler.scale(loss).backward()
-            self.user_params_scaler.step(self.user_params_optimizer)
-            self.user_params_scaler.update()
+                self.user_params_scaler.scale(loss).backward()
+                self.user_params_scaler.step(self.user_params_optimizer)
+                self.user_params_scaler.update()
 
 
 @torch.jit.script

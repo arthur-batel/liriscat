@@ -357,6 +357,9 @@ class CustomCollate(object):
         return env
 
 class EnvModule:
+    """
+    Class managing the Query set, Set of submitted questions and the Meta set (prealocation, storage, update)
+    """
 
     def __init__(self, batch_size: int, data : CATDataset, device: torch.device):
 
@@ -429,7 +432,11 @@ class EnvModule:
             self.query_category_ids[idx:self.current_idx] = new_category_ids
 
     def feed_IMPACT_query(self):
-        return self.query_user_ids[:self.current_idx], self.query_question_ids[:self.current_idx], self.query_labels[:self.current_idx], self.query_category_ids[:self.current_idx]
+        return {
+            "user_ids":self.query_user_ids[:self.current_idx],
+            "question_ids":self.query_question_ids[:self.current_idx],
+            "labels":self.query_labels[:self.current_idx],
+            "category_ids":self.query_category_ids[:self.current_idx]}
 
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U, QC):
@@ -458,6 +465,29 @@ class EnvModule:
         for sublist in qc_action_list:
                 flat.extend(sublist)
         return flat
+
+class EnvQueryDataset(Dataset):
+    """
+    Bridge class transforming the set of submitted question into a torch.utils.data.Dataset
+    """
+    def __init__(self, query_data):
+        # query_data is a dictionary with tensors: user_ids, question_ids, labels, category_ids
+        self.user_ids = query_data["user_ids"]
+        self.question_ids = query_data["question_ids"]
+        self.labels = query_data["labels"]
+        self.category_ids = query_data["category_ids"]
+        self.length = self.user_ids.shape[0]
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        return {
+            "user_ids": self.user_ids[idx],
+            "question_ids": self.question_ids[idx],
+            "labels": self.labels[idx],
+            "category_ids": self.category_ids[idx],
+        }
 
 
 
