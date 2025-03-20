@@ -185,7 +185,7 @@ class AbstractSelectionStrategy(ABC):
         for batch_users_env in valid_loader:
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
+            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
 
             for t in range(self.config['n_query']):
 
@@ -196,7 +196,8 @@ class AbstractSelectionStrategy(ABC):
 
             with torch.enable_grad():
                 self.CDM.model.train()
-                self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids, batch_users_env.query_labels, batch_users_env.query_category_ids)
+                user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
+                self.CDM.update_users(user_ids, question_ids, labels, categories)
                 self.CDM.model.eval()
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -231,7 +232,7 @@ class AbstractSelectionStrategy(ABC):
         for batch_users_env in test_loader:
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
+            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
 
             for t in range(self.config['n_query']):
 
@@ -243,8 +244,8 @@ class AbstractSelectionStrategy(ABC):
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids,
-                                          batch_users_env.query_labels, batch_users_env.query_category_ids)
+                    user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
+                    self.CDM.update_users(user_ids, question_ids, labels, categories)
                     self.CDM.model.eval()
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -326,15 +327,15 @@ class AbstractSelectionStrategy(ABC):
 
             for batch_users_env in train_loader:
 
-                m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.feedIMPACT_meta()
+                m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
 
                 for t in range(self.config['n_query']):
 
                     actions = self.select_action(t, batch_users_env)
 
                     batch_users_env.update(actions, t)
-
-                    self.CDM.update_users(batch_users_env.query_user_ids, batch_users_env.query_question_ids, batch_users_env.query_labels, batch_users_env.query_category_ids)
+                    user_ids, question_ids, labels, categories = batch_users_env.feed_IMPACT_query()
+                    self.CDM.update_users(user_ids, question_ids, labels, categories)
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)

@@ -188,6 +188,8 @@ class Dataset(object):
         return _user_dict, _user_id2idx, _user_idx2id
 
 
+
+
 class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
 
     def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=True):
@@ -312,7 +314,7 @@ class CustomCollate(object):
 
     def __call__(self, batch):
 
-        env = EnvModule(len(batch), self.data.n_questions, self.data.n_meta, self.data.device)
+        env = EnvModule(len(batch), self.data, self.data.device)
 
         # Lists of lists to store the categories associated to each question and meta question
         qc_list = []
@@ -354,51 +356,37 @@ class CustomCollate(object):
 
         return env
 
-class EnvModule(torch.jit.ScriptModule):
-    # Declare attributes as class fields with type annotations
-    query_meta_indices: Tensor
-    row_idx: Tensor
-    query_len: Tensor
-    query_users: Tensor
-    query_questions: Tensor
-    query_responses: Tensor
-    query_cat_nb: Tensor
-    query_cat_list: List[List[List[int]]]
-    query_user_ids: Tensor
-    query_question_ids: Tensor
-    query_labels: Tensor
-    query_category_ids: Tensor
-    meta_users: Tensor
-    meta_questions: Tensor
-    meta_responses: Tensor
-    meta_cat_nb: Tensor
-    meta_categories: Tensor
-    device: torch.device
+class EnvModule:
 
-    def __init__(self, batch_size: int, n_questions: int, n_meta: int, device: torch.device):
-        super(EnvModule, self).__init__()
+    def __init__(self, batch_size: int, data : CATDataset, device: torch.device):
+
+        n_query = data.config['n_query']
+        max_nb_cat_per_question = data.metadata['max_nb_categories_per_question']
+        data_batch_size = n_query * max_nb_cat_per_question * batch_size
 
         # initialize state variables
-        self.query_meta_indices = torch.arange(0, n_questions, device=device, dtype=torch.long).repeat(batch_size, 1)
+        self.query_meta_indices = torch.arange(0, data.n_questions, device=device, dtype=torch.long).repeat(batch_size, 1)
         self.row_idx = torch.arange(self.query_meta_indices.size(0))
 
         # Initialize attributes with proper tensors
         self.query_len = torch.zeros(batch_size, dtype=torch.long, device=device)
         self.query_users = torch.zeros(batch_size, dtype=torch.long, device=device)
-        self.query_questions = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
-        self.query_responses = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
-        self.query_cat_nb = torch.zeros(batch_size, n_questions, dtype=torch.long, device=device)
+        self.query_questions = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_responses = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_cat_nb = torch.zeros(batch_size, data.n_questions, dtype=torch.long, device=device)
 
         self.query_cat_list = []
-        self.query_user_ids = torch.tensor([], dtype=torch.long, device=device)
-        self.query_question_ids = torch.tensor([], dtype=torch.long, device=device)
-        self.query_labels = torch.tensor([], dtype=torch.long, device=device)
-        self.query_category_ids = torch.tensor([], dtype=torch.long, device=device)
+        self.query_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.query_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.query_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.query_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
 
-        self.meta_users = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
-        self.meta_questions = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
-        self.meta_responses = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
-        self.meta_cat_nb = torch.zeros(batch_size, n_meta, dtype=torch.long, device=device)
+        self.current_idx = 0
+
+        self.meta_users = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_questions = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_responses = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self.meta_cat_nb = torch.zeros(batch_size, data.n_meta, dtype=torch.long, device=device)
         self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
 
         self.device = device
@@ -412,31 +400,39 @@ class EnvModule(torch.jit.ScriptModule):
 
     def update(self, actions: Tensor, t: int) -> None:
         with torch.no_grad():
+            idx = self.current_idx
+
             indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
 
             qc_action_list: List[List[int]] = [outer[idx] for outer, idx in zip(self.query_cat_list, indices)]
             flat_qc: List[int] = self.flatten_list(qc_action_list)
-            QC = torch.tensor(flat_qc, device=self.device).int()
+            QC = torch.tensor(flat_qc, device=self.device).long()
 
-            # Assuming feedIMPACT_query is TorchScript-compatible or is wrapped properly
-            new_user_ids, new_question_ids, new_labels, new_category_ids = self.feedIMPACT_query(
+            # Assuming generate_IMPACT_query is TorchScript-compatible or is wrapped properly
+            new_user_ids, new_question_ids, new_labels, new_category_ids = self.generate_IMPACT_query(
                 self.query_questions[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
                 self.query_responses[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
                 self.query_cat_nb[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
                 self.query_users, QC
             )
-    
+
             tmp = self.query_meta_indices[self.row_idx, t]
             self.query_meta_indices[self.row_idx, t] = self.query_meta_indices[self.row_idx, actions]
             self.query_meta_indices[self.row_idx, actions] = tmp
 
-            # Add the new data to the set of submitted questions
-            self.query_user_ids = torch.cat((self.query_user_ids, new_user_ids), dim=0)
-            self.query_question_ids = torch.cat((self.query_question_ids, new_question_ids), dim=0)
-            self.query_labels = torch.cat((self.query_labels, new_labels), dim=0)
-            self.query_category_ids = torch.cat((self.query_category_ids, new_category_ids), dim=0)
+            self.current_idx += new_user_ids.shape[0]
 
-    def feedIMPACT_query(self, QQ, QL, QC_NB, U, QC):
+            # Add the new data to the set of submitted questions
+            self.query_user_ids[idx:self.current_idx] =  new_user_ids
+            self.query_question_ids[idx:self.current_idx] =  new_question_ids
+            self.query_labels[idx:self.current_idx] = new_labels
+            self.query_category_ids[idx:self.current_idx] = new_category_ids
+
+    def feed_IMPACT_query(self):
+        return self.query_user_ids[:self.current_idx], self.query_question_ids[:self.current_idx], self.query_labels[:self.current_idx], self.query_category_ids[:self.current_idx]
+
+
+    def generate_IMPACT_query(self, QQ, QL, QC_NB, U, QC):
 
         question_ids = torch.repeat_interleave(QQ, QC_NB)
         user_ids = torch.repeat_interleave(U, QC_NB)
@@ -444,7 +440,7 @@ class EnvModule(torch.jit.ScriptModule):
 
         return user_ids, question_ids, labels, QC
 
-    def feedIMPACT_meta(self):
+    def generate_IMPACT_meta(self):
         MQ = self.meta_questions.reshape(-1)
         ML = self.meta_responses.reshape(-1)
         MC_NB = self.meta_cat_nb.reshape(-1)
