@@ -48,6 +48,8 @@ class Dataset(object):
         self._log_tensor = self._generate_log_tensor()  # precompute right away
         self._user_dict, self._user_id2idx, self._user_idx2id = self._generate_user_dict()
 
+        self._cat_tensor, self._cat_mask, self._cat_nb = self._generate_qc_tensor()
+
     @property
     def n_users(self):
         """
@@ -119,8 +121,32 @@ class Dataset(object):
         return self._n_meta
 
     @property
+    def n_query(self):
+        """
+        @return: Total number of users in the dataset (before splitting)
+        """
+        return self.config["n_query"]
+
+    @property
+    def cat_tensor(self):
+        return self._cat_tensor
+
+    @property
+    def cat_mask(self):
+        return self._cat_mask
+
+    @property
+    def cat_nb(self):
+        return self._cat_nb
+
+    @property
     def concept_map(self):
         return self._concept_map
+
+    @property
+    def cq_max(self):
+        "Maximum Number of categories per question in the dataset"
+        return self.metadata['max_nb_categories_per_question']
 
     @property
     def metadata(self):
@@ -187,7 +213,16 @@ class Dataset(object):
 
         return _user_dict, _user_id2idx, _user_idx2id
 
-
+    def _generate_qc_tensor(self):
+        size = (self.n_questions, self.cq_max)
+        _cat_tensor = torch.full(size, -1,dtype=torch.long, device=self.device)
+        _cat_len = torch.empty(self.n_questions, dtype=torch.long, device=self.device)
+        for qid, concepts in self.concept_map.items():
+            _cat_tensor[qid, :len(concepts)] = torch.tensor(concepts, device=self.device)
+            _cat_len[qid] = len(concepts)
+        _cat_mask = torch.where(_cat_tensor == -1, torch.zeros(size, dtype=torch.bool, device=self.device),
+                                    torch.ones(size, dtype=torch.bool, device=self.device))
+        return _cat_tensor, _cat_mask, _cat_len
 
 
 class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
@@ -206,17 +241,6 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
         DataLoader.__init__(self, dataset=self, collate_fn=CustomCollate(self), batch_size=batch_size, shuffle=shuffle,
                          pin_memory=pin_memory)
 
-        self._qconcept_len_cache = {}
-        self._qconcept_list_cache = {}
-
-        for qid, concepts in self.concept_map.items():
-
-            self._qconcept_len_cache[qid] = len(concepts)
-
-            # Save the concept list. (Remains on CPU as a Python list,
-            # or you could turn it into a small GPU tensor if you prefer.)
-            self._qconcept_list_cache[qid] = concepts
-
         self.rng = np.random.default_rng(self.query_seed)
 
     def __len__(self):
@@ -230,40 +254,19 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
         meta_index = observed_index[-self.n_meta:]
         query_index = observed_index[:self.config['n_query']]
 
-        query_concepts_nb = torch.tensor(
-            [self._qconcept_len_cache[q.item()] for q in data['q_ids'][query_index]],
-            device=self.device
-        )
-        qc = [
-            self._qconcept_list_cache[q.item()]  # returns a Python list
-            for q in data['q_ids'][query_index]
-        ]
+        return (self.user_idx2id[index],  # int
+                  data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
+                  data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
+                  self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                  self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                  self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
 
-        meta_concepts_nb = torch.tensor(
-            [self._qconcept_len_cache[q.item()] for q in data['q_ids'][meta_index]],
-            device=self.device
-        )
+                  data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
+                  data['labels'][meta_index],  # 1D torch.Tensor, size = M
+                  self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
+                  self.cat_mask[data['q_ids'][meta_index]].flatten(), # 1D torch.Tensor, size = M x cq_max
+                  self.cat_nb[data['q_ids'][meta_index]])  # 1D torch.Tensor, size = M
 
-        mc = list(
-            itertools.chain.from_iterable(
-                self._qconcept_list_cache[q.item()] for q in data['q_ids'][meta_index]
-            )
-        )
-
-
-
-        result = (self.user_idx2id[index],  # int
-                  data['q_ids'][query_index],  # torch.Tensor
-                  data['labels'][query_index],  # torch.Tensor
-                  qc,  # list of lists
-                  query_concepts_nb,  # torch.Tensor
-
-                  data['q_ids'][meta_index],  # torch.Tensor
-                  data['labels'][meta_index],  # torch.Tensor
-                  mc,  # list of ints
-                  meta_concepts_nb,  # torch.Tensor
-                  )
-        return result
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -298,6 +301,9 @@ class evalDataset(CATDataset):
         return self.log_tensor * self.meta_mask
 
     def split_query_meta(self, query_seed):
+        """
+        Split the dataset into a query and a meta set
+        """
 
         self.set_query_seed(query_seed)
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
@@ -323,14 +329,13 @@ class CustomCollate(object):
         self.data = data
 
     def __call__(self, batch):
+        """
+        Collate users data into a batch
+        """
 
         env = EnvModule(len(batch), self.data, self.data.device)
 
-        # Lists of lists to store the categories associated to each question and meta question
-        qc_list = []
-        mc_list = []
-
-        for i, (u, qq, ql, qc, qc_nb, mq, ml, mc, mc_nb) in enumerate(batch) :
+        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch) :
 
             ### ----- Query questions
             # Number of query question for the current user
@@ -339,30 +344,27 @@ class CustomCollate(object):
             env.query_users[i] = u
 
             # Padding with zeros on the right
-            env.query_meta_indices[i,N:] = 0
+            env.query_indices[i, N:] = 0
 
             # Saving logs questions, responses and number of categories
             env.query_questions[i,:N] = qq
             env.query_responses[i, :N] = ql
             env.query_cat_nb[i, :N] = qc_nb
 
-            # Saving the categories associated to each question
-            qc_list.append(qc)
+            # Saving the categories associated to each question and there mask
+            env.query_cat[i, :qc.shape[0]] = qc
+            env.query_cat_mask[i, :qc.shape[0]] = qc_mask
 
             ### ----- Meta questions
             # Saving meta users, questions, responses and number of categories
-
             env.meta_users[i] = torch.full(mq.shape, u, dtype=torch.long, device=self.data.device)
             env.meta_questions[i] = mq
             env.meta_responses[i] = ml
             env.meta_cat_nb[i] = mc_nb
 
-            # Saving the categories associated to each meta question
-            mc_list.extend(mc)
-
-        # Convert the lists of lists to tensors because meta questions are not varying
-        env.meta_categories = torch.tensor(mc_list, device=self.data.device).int()
-        env.query_cat_list = qc_list
+            # Saving the categories associated to each question and there mask
+            env.meta_cat[i, :mc.shape[0]] = mc
+            env.meta_cat_mask[i, :mc.shape[0]] = mc_mask
 
         return env
 
@@ -378,31 +380,36 @@ class EnvModule:
         data_batch_size = n_query * max_nb_cat_per_question * batch_size
 
         # initialize state variables
-        self.query_meta_indices = torch.arange(0, data.n_questions, device=device, dtype=torch.long).repeat(batch_size, 1)
-        self.row_idx = torch.arange(self.query_meta_indices.size(0))
+        ## Tensor storing the indices of the questions submitted by the user
+        self.query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size, 1) # tensor of size (batch_size, n_questions)
+        self.row_idx = torch.arange(self.query_indices.size(0)) # tensor of size (batch_size)
+
+        ## Index of the current number of submitted logs
+        self.current_idx = 0
 
         # Initialize attributes with proper tensors
         self.query_len = torch.empty(batch_size, dtype=torch.long, device=device)
         self.query_users = torch.empty(batch_size, dtype=torch.long, device=device)
-        self.query_questions = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
-        self.query_responses = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
-        self.query_cat_nb = torch.empty(batch_size, data.n_questions, dtype=torch.long, device=device)
+        self.query_questions = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self.query_responses = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self.query_cat_nb = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self.query_cat = torch.empty(batch_size, data.n_query*data.cq_max, dtype=torch.long, device=device)
+        self.query_cat_mask = torch.empty(batch_size, data.n_query*data.cq_max, dtype=torch.bool, device=device)
 
-        self.query_cat_list = []
         self.query_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
 
-        self.current_idx = 0
-
         self.meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
         self.meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
         self.meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
         self.meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_categories = torch.tensor([], dtype=torch.long, device=device)
+        self.meta_cat = torch.empty(batch_size, data.n_meta*data.cq_max, dtype=torch.long, device=device)
+        self.meta_cat_mask = torch.empty(batch_size, data.n_meta*data.cq_max, dtype=torch.bool, device=device)
 
         self.device = device
+        self.cq_max = data.cq_max
 
     @property
     def n_meta_logs(self):
@@ -415,24 +422,23 @@ class EnvModule:
         with torch.no_grad():
             idx = self.current_idx
 
-            indices: List[int] = self.query_meta_indices[self.row_idx, actions].tolist()
+            new_user_ids, new_question_ids, new_labels = self.generate_IMPACT_query(
+                self.query_questions[self.row_idx, self.query_indices[self.row_idx, actions]],
+                self.query_responses[self.row_idx, self.query_indices[self.row_idx, actions]],
+                self.query_cat_nb[self.row_idx, self.query_indices[self.row_idx, actions]],
+                self.query_users)
 
-            qc_action_list: List[List[int]] = [outer[idx] for outer, idx in zip(self.query_cat_list, indices)]
-            flat_qc: List[int] = self.flatten_list(qc_action_list)
-            QC = torch.tensor(flat_qc, device=self.device).long()
+            start = self.query_indices[self.row_idx, actions] * self.cq_max # (shape: [batch_size])
+            offset = torch.arange(self.cq_max, device=self.device).unsqueeze(0) # (shape: [1, cq_max])
+            indices = start.unsqueeze(1) + offset # (shape: [batch_size, cq_max])
+            new_category_ids = self.query_cat.gather(1, indices)[self.query_cat_mask.gather(1, indices)]
 
-            # Assuming generate_IMPACT_query is TorchScript-compatible or is wrapped properly
-            new_user_ids, new_question_ids, new_labels, new_category_ids = self.generate_IMPACT_query(
-                self.query_questions[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-                self.query_responses[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-                self.query_cat_nb[self.row_idx, self.query_meta_indices[self.row_idx, actions]],
-                self.query_users, QC
-            )
+            # Update the tensor of query indices
+            tmp = self.query_indices[self.row_idx, t]
+            self.query_indices[self.row_idx, t] = self.query_indices[self.row_idx, actions]
+            self.query_indices[self.row_idx, actions] = tmp
 
-            tmp = self.query_meta_indices[self.row_idx, t]
-            self.query_meta_indices[self.row_idx, t] = self.query_meta_indices[self.row_idx, actions]
-            self.query_meta_indices[self.row_idx, actions] = tmp
-
+            # increment the number of submitted logs
             self.current_idx += new_user_ids.shape[0]
 
             # Add the new data to the set of submitted questions
@@ -440,6 +446,7 @@ class EnvModule:
             self.query_question_ids[idx:self.current_idx] =  new_question_ids
             self.query_labels[idx:self.current_idx] = new_labels
             self.query_category_ids[idx:self.current_idx] = new_category_ids
+
 
     def feed_IMPACT_query(self):
         return {
@@ -449,13 +456,13 @@ class EnvModule:
             "category_ids":self.query_category_ids[:self.current_idx]}
 
 
-    def generate_IMPACT_query(self, QQ, QL, QC_NB, U, QC):
+    def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
 
         question_ids = torch.repeat_interleave(QQ, QC_NB)
         user_ids = torch.repeat_interleave(U, QC_NB)
         labels = torch.repeat_interleave(QL, QC_NB)
 
-        return user_ids, question_ids, labels, QC
+        return user_ids, question_ids, labels
 
     def generate_IMPACT_meta(self):
         MQ = self.meta_questions.reshape(-1)
@@ -466,7 +473,7 @@ class EnvModule:
         question_ids = torch.repeat_interleave(MQ, MC_NB)
         user_ids = torch.repeat_interleave(MU, MC_NB)
         labels = torch.repeat_interleave(ML, MC_NB)
-        category_ids = self.meta_categories
+        category_ids = self.meta_cat[self.meta_cat_mask]
 
         return user_ids, question_ids, labels, category_ids
 
