@@ -71,7 +71,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
                      save_params: bool = False, embs_path: str = '../embs/',
                      params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                      verbose_early_stopping: str = False, disable_tqdm: bool = True,
-                     valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                     valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
                      num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                      device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
@@ -97,6 +97,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'valid_metric': valid_metric,
         'learning_rate': learning_rate,
         'batch_size': batch_size,
+        'valid_batch_size': valid_batch_size,
         'num_epochs': num_epochs,
         'eval_freq': eval_freq,
         'patience': patience,
@@ -116,7 +117,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                        save_params: bool = False, embs_path: str = '../embs/',
                        params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                        verbose_early_stopping: str = False, disable_tqdm: bool = True,
-                       valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                       valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
                        num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                        device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
@@ -138,6 +139,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
             valid_metric (str): Metric to be used for hyperparameters selection on the valid dataset (including early stopping). Possible values: 'rmse', 'mae', 'mi_acc'. Default is 'rmse'.
             learning_rate (float): Learning rate for the optimizer. Default is 0.001.
             batch_size (int): Batch size for training. Default is 2048.
+            valid_batch_size (int): Batch size for validation. Default is 10000.
             num_epochs (int): Number of epochs for training. (Maximum number if early stopping) Default is 200.
             eval_freq (int): Frequency of evaluation during training. Default is 1.
             patience (int): Patience for early stopping. Default is 30.
@@ -154,17 +156,17 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
-    return _generate_config(dataset_name, seed, load_params, save_params, embs_path, params_path,
-                            early_stopping, esc, verbose_early_stopping, disable_tqdm,
-                            valid_metric, learning_rate, batch_size, num_epochs, eval_freq, patience, device,
-                            lambda_, tensorboard, flush_freq, pred_metrics, profile_metrics,
-                            num_responses, low_mem, n_query)
+    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params, embs_path=embs_path, params_path=params_path,
+                           early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
+                           valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
+                           lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
+                           num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM)
 
 def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
                          save_params: bool = True, embs_path: str = '../embs/',
                          params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                          verbose_early_stopping: str = False, disable_tqdm: bool = False,
-                         valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                         valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
                          num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                          device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                          flush_freq: bool = True, pred_metrics: list = ['rmse', 'mae', 'r2'],
@@ -187,6 +189,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
             valid_metric (str): Metric to be used for hyperparameters selection on the valid dataset (including early stopping). Possible values: 'rmse', 'mae', 'mi_acc'. Default is 'rmse'.
             learning_rate (float): Learning rate for the optimizer. Default is 0.001.
             batch_size (int): Batch size for training. Default is 2048.
+            valid_batch_size (int): Batch size for validation. Default is 10000.
             num_epochs (int): Number of epochs for training. (Maximum number if early stopping) Default is 200.
             eval_freq (int): Frequency of evaluation during training. Default is 1.
             patience (int): Patience for early stopping. Default is 30.
@@ -203,11 +206,11 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
-    return _generate_config(dataset_name, seed, load_params, save_params, embs_path, params_path,
-                            early_stopping, esc, verbose_early_stopping, disable_tqdm,
-                            valid_metric, learning_rate, batch_size, num_epochs, eval_freq, patience, device,
-                            lambda_, tensorboard, flush_freq, pred_metrics, profile_metrics,
-                            num_responses, low_mem,n_query)
+    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params, embs_path=embs_path, params_path=params_path,
+                            early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
+                            valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
+                            lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
+                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM)
 
 def evaluate_doa(E, R, metadata, concept_map):
     q = {}

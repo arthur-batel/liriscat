@@ -47,7 +47,6 @@ class Dataset(object):
         self._torch_array = torch.from_numpy(df.to_numpy()).to(device=self.device)
         self._log_tensor = self._generate_log_tensor()  # precompute right away
         self._user_dict, self._user_id2idx, self._user_idx2id = self._generate_user_dict()
-
         self._cat_tensor, self._cat_mask, self._cat_nb = self._generate_qc_tensor()
 
     @property
@@ -196,7 +195,7 @@ class Dataset(object):
         tensor_data.index_put_((sid, qid), val)
         return tensor_data
 
-    def _generate_user_dict(self) -> None:
+    def _generate_user_dict(self) :
         _user_dict = {}
         _user_id2idx = {}
         _user_idx2id = {}
@@ -225,12 +224,12 @@ class Dataset(object):
         return _cat_tensor, _cat_mask, _cat_len
 
 
-class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
+class CATDataset(Dataset, data.dataset.Dataset):
     """
     Train dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=True, pin_memory=True):
+    def __init__(self, data, concept_map, metadata, config):
         """
         Args:
             data: list, [(sid, qid, score)]
@@ -238,8 +237,6 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
         Dataset.__init__(self,data, concept_map, metadata, config)
-        DataLoader.__init__(self, dataset=self, collate_fn=CustomCollate(self), batch_size=batch_size, shuffle=shuffle,
-                         pin_memory=pin_memory)
 
         self.rng = np.random.default_rng(self.query_seed)
 
@@ -273,22 +270,21 @@ class CATDataset(Dataset, data.dataset.Dataset, data.DataLoader):
         # Warning : index is not the user id but the index of the user in the dataset!
         'Generates one sample of data'
 
-
         return self.generate_sample(index)
 
-class evalDataset(CATDataset):
+class EvalDataset(CATDataset):
     """
     valid and test dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config, batch_size, shuffle=False, pin_memory=True):
+    def __init__(self, data, concept_map, metadata, config):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        super().__init__(data, concept_map, metadata, config, batch_size, shuffle=shuffle, pin_memory=pin_memory)
+        super().__init__(data, concept_map, metadata, config)
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
         self._precomputed_batch = {}
 
@@ -324,109 +320,175 @@ class evalDataset(CATDataset):
 
         return self._precomputed_batch[index]
 
-class CustomCollate(object):
-    def __init__(self, data: CATDataset):
-        self.data = data
 
-    def __call__(self, batch):
-        """
-        Collate users data into a batch
-        """
 
-        env = EnvModule(len(batch), self.data, self.data.device)
-
-        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch) :
-
-            ### ----- Query questions
-            # Number of query question for the current user
-            N = qq.shape[0]
-            env.query_len[i] = N
-            env.query_users[i] = u
-
-            # Padding with zeros on the right
-            env.query_indices[i, N:] = 0
-
-            # Saving logs questions, responses and number of categories
-            env.query_questions[i,:N] = qq
-            env.query_responses[i, :N] = ql
-            env.query_cat_nb[i, :N] = qc_nb
-
-            # Saving the categories associated to each question and there mask
-            env.query_cat[i, :qc.shape[0]] = qc
-            env.query_cat_mask[i, :qc.shape[0]] = qc_mask
-
-            ### ----- Meta questions
-            # Saving meta users, questions, responses and number of categories
-            env.meta_users[i] = torch.full(mq.shape, u, dtype=torch.long, device=self.data.device)
-            env.meta_questions[i] = mq
-            env.meta_responses[i] = ml
-            env.meta_cat_nb[i] = mc_nb
-
-            # Saving the categories associated to each question and there mask
-            env.meta_cat[i, :mc.shape[0]] = mc
-            env.meta_cat_mask[i, :mc.shape[0]] = mc_mask
-
-        return env
-
-class EnvModule:
+class QueryEnv:
     """
-    Class managing the Query set, Set of submitted questions and the Meta set (prealocation, storage, update)
+    QueryEnv manages the Query set, Set of submitted questions and the Meta set (prealocation, storage, update) :
+        - store the data
+        - save and update there membership to the three sets
+        - transform the data to IMPACT compatible format
+    Each batch of data overwrites the previous one to optimize GPU memory allocation
     """
 
-    def __init__(self, batch_size: int, data : CATDataset, device: torch.device):
+    def __init__(self, data : CATDataset, device: torch.device, batch_size: int):
 
-        n_query = data.config['n_query']
+        self.n_query = data.config['n_query']
+        self.device = device
+        self.cq_max = data.cq_max
+
         max_nb_cat_per_question = data.metadata['max_nb_categories_per_question']
-        data_batch_size = n_query * max_nb_cat_per_question * batch_size
+        data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
 
-        # initialize state variables
-        ## Tensor storing the indices of the questions submitted by the user
-        self.query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size, 1) # tensor of size (batch_size, n_questions)
-        self.row_idx = torch.arange(self.query_indices.size(0)) # tensor of size (batch_size)
+        # Initialize attributes
+        ## Variable storing the current batch size
+        self._current_batch_size = batch_size
 
-        ## Index of the current number of submitted logs
-        self.current_idx = 0
+        ## Tensors storing all query data (submitted and unsubmitted
+        self._query_len = torch.empty(batch_size, dtype=torch.long, device=device)
+        self._query_users_vec = torch.empty(batch_size, dtype=torch.long, device=device)
+        self._query_questions = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self._query_responses = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self._query_cat_nb = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
+        self._query_cat = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.long, device=device)
+        self._query_cat_mask = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.bool, device=device)
 
-        # Initialize attributes with proper tensors
-        self.query_len = torch.empty(batch_size, dtype=torch.long, device=device)
-        self.query_users = torch.empty(batch_size, dtype=torch.long, device=device)
-        self.query_questions = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
-        self.query_responses = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
-        self.query_cat_nb = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
-        self.query_cat = torch.empty(batch_size, data.n_query*data.cq_max, dtype=torch.long, device=device)
-        self.query_cat_mask = torch.empty(batch_size, data.n_query*data.cq_max, dtype=torch.bool, device=device)
-
+        ## Tensors storing submitted query data
         self.query_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
         self.query_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
 
-        self.meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self.meta_cat = torch.empty(batch_size, data.n_meta*data.cq_max, dtype=torch.long, device=device)
-        self.meta_cat_mask = torch.empty(batch_size, data.n_meta*data.cq_max, dtype=torch.bool, device=device)
+        ## Tensor storing the indices of the questions submitted to the user
+        self._query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size, 1) # tensor of size (batch_size, n_query)
+        self._row_idx = torch.arange(batch_size) # tensor of size (batch_size)
 
-        self.device = device
-        self.cq_max = data.cq_max
+        ## Submitted state
+        self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users)
+
+        ## Tensors storing meta data
+        self._meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self._meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self._meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self._meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
+        self._meta_cat = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.long, device=device)
+        self._meta_cat_mask = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.bool, device=device)
+
+    @property
+    def current_batch_size(self):
+        return self._current_batch_size
 
     @property
     def n_meta_logs(self):
         """
         @return: Total number of meta logs (including logs multiplied because of several categories
         """
-        return self.meta_cat_nb.sum().item()
+        return self._meta_cat_nb.sum().item()
+
+    @property
+    def meta_users(self):
+        return self._meta_users[:self._current_batch_size,:]
+
+    @property
+    def meta_questions(self):
+        return self._meta_questions[:self._current_batch_size,:]
+
+    @property
+    def meta_responses(self):
+        return self._meta_responses[:self._current_batch_size,:]
+
+    @property
+    def meta_cat_nb(self):
+        return self._meta_cat_nb[:self._current_batch_size,:]
+
+    @property
+    def meta_cat(self):
+        return self._meta_cat[:self._current_batch_size,:]
+
+    @property
+    def meta_cat_mask(self):
+        return self._meta_cat_mask[:self._current_batch_size,:]
+
+    @property
+    def query_len(self):
+        return self._query_len[:self._current_batch_size]
+
+    @property
+    def query_users_vec(self):
+        return self._query_users_vec[:self._current_batch_size]
+
+    @property
+    def query_questions(self):
+        return self._query_questions[:self._current_batch_size,:]
+
+    @property
+    def query_responses(self):
+        return self._query_responses[:self._current_batch_size,:]
+
+    @property
+    def query_cat_nb(self):
+        return self._query_cat_nb[:self._current_batch_size,:]
+
+    @property
+    def query_cat(self):
+        return self._query_cat[:self._current_batch_size,:]
+
+    @property
+    def query_cat_mask(self):
+        return self._query_cat_mask[:self._current_batch_size,:]
+
+    @property
+    def query_indices(self):
+        return self._query_indices[:self._current_batch_size,:]
+
+    @property
+    def row_idx(self):
+        return self._row_idx[:self._current_batch_size]
+
+    def loading_new_users(self, current_batch_size : int):
+        """
+        Limit the access to the only part of tensors which have been refilled in the last batch (to execute at every batch)
+        """
+        self._current_batch_size = current_batch_size
+        self._current_charged_log_nb = 0
+
+    def set_user_query_meta_data(self, user_idx, user_id, n, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb):
+        """
+        Fill the tensor data with a new user
+        """
+        self._query_len[user_idx] = n
+        self._query_users_vec[user_idx] = user_id
+
+        # Saving logs questions, responses and number of categories
+        self._query_questions[user_idx, :n] = qq
+        self._query_responses[user_idx, :n] = ql
+        self._query_cat_nb[user_idx, :n] = qc_nb
+
+        # Saving the categories associated to each question and their mask
+        self._query_cat[user_idx, :qc.shape[0]] = qc
+        self._query_cat_mask[user_idx, :qc.shape[0]] = qc_mask
+
+        ### ----- Meta questions
+        # Saving meta users, questions, responses and number of categories
+        self._meta_users[user_idx] = torch.full(mq.shape, user_id, dtype=torch.long, device=self.device)
+        self._meta_questions[user_idx] = mq
+        self._meta_responses[user_idx] = ml
+        self._meta_cat_nb[user_idx] = mc_nb
+
+        # Saving the categories associated to each question and their mask
+        self._meta_cat[user_idx, :mc.shape[0]] = mc
+        self._meta_cat_mask[user_idx, :mc.shape[0]] = mc_mask
 
     def update(self, actions: Tensor, t: int) -> None:
+
         with torch.no_grad():
-            idx = self.current_idx
+            idx = self._current_charged_log_nb
 
             new_user_ids, new_question_ids, new_labels = self.generate_IMPACT_query(
                 self.query_questions[self.row_idx, self.query_indices[self.row_idx, actions]],
                 self.query_responses[self.row_idx, self.query_indices[self.row_idx, actions]],
                 self.query_cat_nb[self.row_idx, self.query_indices[self.row_idx, actions]],
-                self.query_users)
+                self.query_users_vec)
 
             start = self.query_indices[self.row_idx, actions] * self.cq_max # (shape: [batch_size])
             offset = torch.arange(self.cq_max, device=self.device).unsqueeze(0) # (shape: [1, cq_max])
@@ -439,21 +501,21 @@ class EnvModule:
             self.query_indices[self.row_idx, actions] = tmp
 
             # increment the number of submitted logs
-            self.current_idx += new_user_ids.shape[0]
+            self._current_charged_log_nb += new_user_ids.shape[0]
 
             # Add the new data to the set of submitted questions
-            self.query_user_ids[idx:self.current_idx] =  new_user_ids
-            self.query_question_ids[idx:self.current_idx] =  new_question_ids
-            self.query_labels[idx:self.current_idx] = new_labels
-            self.query_category_ids[idx:self.current_idx] = new_category_ids
+            self.query_user_ids[idx:self._current_charged_log_nb] =  new_user_ids
+            self.query_question_ids[idx:self._current_charged_log_nb] =  new_question_ids
+            self.query_labels[idx:self._current_charged_log_nb] = new_labels
+            self.query_category_ids[idx:self._current_charged_log_nb] = new_category_ids
 
 
     def feed_IMPACT_query(self):
         return {
-            "user_ids":self.query_user_ids[:self.current_idx],
-            "question_ids":self.query_question_ids[:self.current_idx],
-            "labels":self.query_labels[:self.current_idx],
-            "category_ids":self.query_category_ids[:self.current_idx]}
+            "user_ids": self.query_user_ids[:self._current_charged_log_nb],
+            "question_ids": self.query_question_ids[:self._current_charged_log_nb],
+            "labels": self.query_labels[:self._current_charged_log_nb],
+            "category_ids": self.query_category_ids[:self._current_charged_log_nb]}
 
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
@@ -477,7 +539,27 @@ class EnvModule:
 
         return user_ids, question_ids, labels, category_ids
 
-class EnvQueryDataset(Dataset):
+class UserCollate(object):
+    def __init__(self, query_env: QueryEnv):
+        self.query_env = query_env
+
+    def __call__(self, batch):
+        """
+        Collate users data into a batch
+        """
+
+        self.query_env.loading_new_users(len(batch))
+
+        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch) :
+
+            ### ----- Query questions
+            # Number of query question for the current user
+            n = qq.shape[0]
+            self.query_env.set_user_query_meta_data(i, u, n, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb)
+
+        return None
+
+class SubmittedDataset(Dataset):
     """
     Bridge class transforming the set of submitted question into a torch.utils.data.Dataset
     """

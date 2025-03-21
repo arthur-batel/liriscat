@@ -10,6 +10,8 @@ from stat import S_IREAD
 
 from sklearn.metrics import roc_auc_score
 from torch.cuda import device
+from torch.utils.data import DataLoader
+
 
 from liriscat import utils
 from liriscat import dataset
@@ -18,6 +20,8 @@ import torch
 import logging
 from torch.utils import data
 from tqdm import tqdm
+
+from liriscat.dataset import UserCollate, QueryEnv
 
 
 class AbstractSelectionStrategy(ABC):
@@ -174,7 +178,7 @@ class AbstractSelectionStrategy(ABC):
 
     @evaluation_param
     @evaluation_state
-    def evaluate_valid(self, valid_loader: dataset.CATDataset):
+    def evaluate_valid(self, valid_loader: DataLoader, valid_query_env: QueryEnv):
         """
         Evaluate the model on the given data using the given metrics.
         """
@@ -182,87 +186,89 @@ class AbstractSelectionStrategy(ABC):
         pred_list = []
         label_list = []
 
-        for batch_users_env in valid_loader:
+        for _ in valid_loader:
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
+            m_user_ids, m_question_ids, m_labels, m_category_ids = valid_query_env.generate_IMPACT_meta()
 
             for t in range(self.config['n_query']):
 
                 # Select the action (question to submit)
-                actions = self.select_action(t, batch_users_env)
+                actions = self.select_action(t, valid_query_env)
 
-                batch_users_env.update(actions, t)
+                valid_query_env.update(actions, t)
 
             with torch.enable_grad():
                 self.CDM.model.train()
-                self.CDM.update_users(batch_users_env.feed_IMPACT_query())
+                self.CDM.update_users(valid_query_env.feed_IMPACT_query())
                 self.CDM.model.eval()
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
-
             total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
-            loss_list.append(total_loss.detach())
 
+            loss_list.append(total_loss.detach())
             pred_list.append(preds)
             label_list.append(m_labels)
 
-            pred_tensor = torch.cat(pred_list)
-            label_tensor = torch.cat(label_list)
-            mean_loss = torch.mean(torch.stack(loss_list))
+        pred_tensor = torch.cat(pred_list)
+        label_tensor = torch.cat(label_list)
+        mean_loss = torch.mean(torch.stack(loss_list))
 
         return mean_loss, self.valid_metric(pred_tensor, label_tensor)
 
     @evaluation_param
     @evaluation_state
-    def evaluate_test(self, test_data: dataset.CATDataset):
+    def evaluate_test(self, test_dataset: dataset.EvalDataset):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
 
-        test_loader = data.DataLoader(test_data, collate_fn=dataset.CustomCollate(test_data), batch_size=10000,
+        test_dataset.split_query_meta(self.config['seed'])  # split valid query qnd meta set one and for all epochs
+
+        test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
+        test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
                                       shuffle=False, pin_memory=False)
 
         pred_list = {t : [] for t in range(self.config['n_query'])}
         label_list = {t : [] for t in range(self.config['n_query'])}
-        emb_tensor = torch.zeros(size = (test_data.n_actual_users, self.config['n_query'], test_data.n_categories), device=self.device)
+        emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
         log_idx = 0
-        for batch_users_env in test_loader:
+        for _ in test_loader:
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
+            m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
 
             for t in range(self.config['n_query']):
 
                 # Select the action (question to submit)
-                actions = self.select_action(t, batch_users_env)
+                actions = self.select_action(t, test_query_env)
 
-                batch_users_env.update(actions, t)
+                test_query_env.update(actions, t)
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_users(batch_users_env.feed_IMPACT_query())
+                    self.CDM.update_users(test_query_env.feed_IMPACT_query())
                     self.CDM.model.eval()
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
                 pred_list[t].append(preds)
                 label_list[t].append(m_labels)
-                emb_tensor[log_idx:log_idx+batch_users_env.query_users.shape[0],t,:] = self.CDM.get_user_emb()[batch_users_env.query_users,:]
+                emb_tensor[log_idx:log_idx+test_query_env.current_batch_size, t, :] = self.CDM.get_user_emb()[test_query_env.query_users_vec, :]
 
-            log_idx += batch_users_env.query_users.shape[0]
+            log_idx += test_query_env.current_batch_size
 
         # Compute metrics in one pass using a dictionary comprehension
         results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t])).cpu().item()
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
-        results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_data)
+        results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset)
                    for metric in self.profile_metrics} for t in range(self.config['n_query'])}
 
         return results_pred, results_profiles
 
-    def train(self, train_loader: dataset.CATDataset, valid_loader: dataset.evalDataset):
+    def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
         """Train the model."""
 
         lr = self.config['learning_rate']
@@ -273,7 +279,7 @@ class AbstractSelectionStrategy(ABC):
 
         match self.config['CDM']:
             case 'impact':
-                self.CDM.init_model(train_loader, valid_loader)
+                self.CDM.init_model(train_dataset, valid_dataset)
                 self.CDM.model.to(device, non_blocking=True)
                 if hasattr(torch, "compile"):
                     self.CDM.model = torch.compile(self.CDM.model)
@@ -299,7 +305,8 @@ class AbstractSelectionStrategy(ABC):
         self.scaler = torch.amp.GradScaler(self.device)
 
         self.model.train()
-        self._train_method(train_loader, valid_loader)
+
+        self._train_method(train_dataset, valid_dataset)
 
         self._trained = True
 
@@ -310,29 +317,40 @@ class AbstractSelectionStrategy(ABC):
             logging.info("Params saved")
         self.fold += 1
 
-    def _train_early_stopping_error(self, train_loader, valid_loader):
+    def _train_early_stopping_error(self, train_dataset, valid_dataset):
 
         epochs = self.config['num_epochs']
         eval_freq = self.config['eval_freq']
         patience = self.config['patience']
 
-        valid_loader.split_query_meta(self.config['seed']) # split valid query qnd meta set one and for all epochs
+        valid_dataset.split_query_meta(self.config['seed']) # split valid query qnd meta set one and for all epochs
+
+        train_query_env = QueryEnv(train_dataset, self.device, self.config['batch_size'])
+        valid_query_env = QueryEnv(valid_dataset, self.device, self.config['valid_batch_size'])
+
+        train_loader = DataLoader(dataset=train_dataset, collate_fn=UserCollate(train_query_env), batch_size=self.config['batch_size'],
+                                  shuffle=True, pin_memory=True)
+
+        valid_loader = DataLoader(dataset=valid_dataset, collate_fn=UserCollate(valid_query_env),
+                                  batch_size=self.config['valid_batch_size'],
+                                  shuffle=False, pin_memory=True)
+
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
-            train_loader.set_query_seed(ep) # changes the meta and query set for each epoch
+            train_dataset.set_query_seed(ep) # changes the meta and query set for each epoch
 
-            for batch_users_env in train_loader:
+            for _ in train_loader: # UserCollate directly load the data into the query environment
 
-                m_user_ids, m_question_ids, m_labels, m_category_ids = batch_users_env.generate_IMPACT_meta()
+                m_user_ids, m_question_ids, m_labels, m_category_ids = train_query_env.generate_IMPACT_meta()
 
                 for t in range(self.config['n_query']):
 
-                    actions = self.select_action(t, batch_users_env)
+                    actions = self.select_action(t, train_query_env)
 
-                    batch_users_env.update(actions, t)
+                    train_query_env.update(actions, t)
 
-                    self.CDM.update_users(batch_users_env.feed_IMPACT_query())
+                    self.CDM.update_users(train_query_env.feed_IMPACT_query())
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
@@ -340,7 +358,7 @@ class AbstractSelectionStrategy(ABC):
             # Early stopping
             if (ep + 1) % eval_freq == 0:
                 with torch.no_grad(), torch.amp.autocast('cuda'):
-                    valid_loss, valid_metric = self.evaluate_valid(valid_loader)
+                    valid_loss, valid_metric = self.evaluate_valid(valid_loader, valid_query_env)
 
                     logging.info(f'{valid_metric}, {valid_loss}')
 

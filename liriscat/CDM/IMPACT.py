@@ -547,7 +547,7 @@ class IMPACT(AbstractModel):
         self.params_scaler.update()
 
     def update_users(self,query_data) :
-        data = dataset.EnvQueryDataset(query_data)
+        data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
         for _ in range(5):
