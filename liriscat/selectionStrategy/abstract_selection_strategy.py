@@ -83,7 +83,7 @@ class AbstractSelectionStrategy(ABC):
 
         match config['CDM']:
             case 'impact':
-                self.CDM = CDM.IMPACT(**config)
+                self.CDM = CDM.CATIMPACT(**config)
 
     @property
     def name(self):

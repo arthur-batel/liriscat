@@ -31,7 +31,31 @@ def remove_duplicates(data: pd.DataFrame, key_attrs: List[str], agg_attrs: List[
 
     :param data: Dataset as a pandas.DataFrame
     :type data: pd.DataFrame
-    :param key_attrs: Attributes whose combination must be unique
+def split_data_horizontally(df):
+    train = []
+    valid = []
+
+    for i_group, group in df.groupby('student_id'):
+        group_idxs = group.index.values
+
+        train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
+
+        train.extend(group.loc[train_item_idx].values.tolist())
+        valid.extend(group.loc[valid_item_idx].values.tolist())
+
+    return train, validdef split_data_horizontally(df):
+        train = []
+        valid = []
+
+        for i_group, group in df.groupby('student_id'):
+            group_idxs = group.index.values
+
+            train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
+
+            train.extend(group.loc[train_item_idx].values.tolist())
+            valid.extend(group.loc[valid_item_idx].values.tolist())
+
+        return train, valid    :param key_attrs: Attributes whose combination must be unique
     :type key_attrs: List[str]
     :param agg_attrs: Attributes to aggregate in a set for every unique key
     :type agg_attrs: List[str]
@@ -241,7 +265,7 @@ def split_users(df, folds_nb=5) :
     test = [[] for _ in range(folds_nb)]
 
     for i_fold in range(folds_nb):
-        test_fold, valid_fold = (i_fold - 1)%5, i_fold
+        test_fold, valid_fold = (i_fold - 1) % 5, i_fold
 
         test_users = users_idx[test_fold * N: (test_fold + 1) * N]
         valid_users = users_idx[valid_fold * N: (valid_fold + 1) * N]
@@ -257,6 +281,20 @@ def split_users(df, folds_nb=5) :
 
 
     return train, valid, test
+
+def split_data_horizontally(df):
+    train = []
+    valid = []
+
+    for i_group, group in df.groupby('user_id'):
+        group_idxs = group.index.values
+
+        train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
+
+        train.extend(group.loc[train_item_idx].values.tolist())
+        valid.extend(group.loc[valid_item_idx].values.tolist())
+
+    return train, valid
 
 def save_df_to_csv(data, path):
     """

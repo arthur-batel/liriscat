@@ -77,6 +77,14 @@ class Dataset(object):
         """
         return self.metadata["num_item_id"]
 
+    # For old naming compatibility
+    @property
+    def n_items(self):
+        """
+        @return: Total number of items in the dataset (before splitting)
+        """
+        return self.metadata["num_item_id"]
+
     @property
     def n_categories(self):
         """
