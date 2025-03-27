@@ -64,7 +64,7 @@ class CATIMPACT(IMPACT) :
         data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
-        for _ in range(5):
+        for _ in range(10):
             self.user_params_optimizer.zero_grad()
 
             for batch in dataloader:
@@ -75,6 +75,7 @@ class CATIMPACT(IMPACT) :
 
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
+                    print(loss)
 
                 self.user_params_scaler.scale(loss).backward()
                 self.user_params_scaler.step(self.user_params_optimizer)
