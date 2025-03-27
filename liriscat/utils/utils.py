@@ -110,7 +110,8 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'num_responses': num_responses,
         'low_mem': low_mem,
         'n_query': n_query,
-        'CDM': CDM
+        'CDM': CDM,
+        'ifold': i_fold,
     }
 
 def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
