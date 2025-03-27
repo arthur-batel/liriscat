@@ -276,7 +276,7 @@ class AbstractSelectionStrategy(ABC):
                 if hasattr(torch, "compile"):
                     self.CDM.model = torch.compile(self.CDM.model)
 
-        self.model.to(device, non_blocking=True)
+        self.model.to(self.config['device'], non_blocking=True)
         if hasattr(torch, "compile"):
             self.model = torch.compile(self.model)
 
