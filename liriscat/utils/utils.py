@@ -75,7 +75,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
                      num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                      device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
-                     num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str = 'impact', i_fold:int=0) -> dict:
+                     num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str = 'impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
     if device is None:
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -122,7 +122,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                        num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                        device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
-                       num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0) -> dict:
+                       num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
     """
         Generate a configuration dictionary for the model hyperparameter search process.
 
@@ -162,7 +162,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                            early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
                            valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
                            lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
-                           num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold)
+                           num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs)
 
 def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
                          save_params: bool = True, embs_path: str = '../embs/',
@@ -173,7 +173,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                          device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                          flush_freq: bool = True, pred_metrics: list = ['rmse', 'mae', 'r2'],
                          profile_metrics: list = ['doa', 'pc-er'],
-                         num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0) -> dict:
+                         num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
     """
         Generate a configuration dictionary for the model evaluation.
 
@@ -213,7 +213,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
                             valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
                             lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
-                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM,i_fold=i_fold)
+                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM,i_fold=i_fold,num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs)
 
 def evaluate_doa(E, R, metadata, concept_map):
     q = {}

@@ -1,3 +1,5 @@
+import logging
+
 import torch.nn
 from liriscat.selectionStrategy import AbstractSelectionStrategy
 from torch import nn
@@ -8,7 +10,7 @@ class Random(AbstractSelectionStrategy):
     def __init__(self, **config):
         super().__init__('Random', **config)
         self.model = RandomModel()
-        print(self.model)
+        logging.info(self.name)
 
     def select_action(self,t,env):
 

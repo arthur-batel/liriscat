@@ -50,7 +50,7 @@ class CATIMPACT(IMPACT) :
         return self.model.state_dict()
 
     def update_params(self,user_ids, question_ids, labels, categories) :
-        for _ in range(10) :
+        for _ in range(self.config['num_inner_epochs']) :
             self.params_optimizer.zero_grad()
 
             with torch.amp.autocast('cuda'):
@@ -64,7 +64,7 @@ class CATIMPACT(IMPACT) :
         data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
-        for _ in range(10):
+        for _ in range(self.config['num_inner_users_epochs']) :
             self.user_params_optimizer.zero_grad()
 
             for batch in dataloader:
