@@ -146,37 +146,6 @@ class AbstractSelectionStrategy(ABC):
 
         return wrapper
 
-    def evaluation_param(func):
-        """
-        Temporary change precomputed self.model.R and self.model.ir_idx params
-        """
-
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Extract 'self' from the first positional argument
-            self = args[0] if args else None
-            if self is None:
-                raise ValueError("Decorator 'evaluation_param' requires to be used on instance methods.")
-
-            # Store the previous state
-            prev_state = (self.CDM.model.R, self.CDM.model.ir_idx)
-
-            try:
-                # Set the state to 'eval' before method execution
-                self.CDM.model.R = self.CDM.model.R_valid
-                self.CDM.model.ir_idx = self.CDM.model.ir_idx_valid
-                # Call the actual method
-                result = func(*args, **kwargs)
-            finally:
-                # Restore the previous state after method execution
-                self.CDM.model.R = prev_state[0]
-                self.CDM.model.ir_idx = prev_state[1]
-
-            return result
-
-        return wrapper
-
-    @evaluation_param
     @evaluation_state
     def evaluate_valid(self, valid_loader: DataLoader, valid_query_env: QueryEnv):
         """
