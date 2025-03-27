@@ -268,15 +268,7 @@ class AbstractSelectionStrategy(ABC):
 
         return results_pred, results_profiles
 
-    def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
-        """Train the model."""
-
-        lr = self.config['learning_rate']
-        batch_size = self.config['batch_size']
-        device = self.config['device']
-
-        torch.cuda.empty_cache()
-
+    def init_models(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
         match self.config['CDM']:
             case 'impact':
                 self.CDM.init_model(train_dataset, valid_dataset)
@@ -287,6 +279,16 @@ class AbstractSelectionStrategy(ABC):
         self.model.to(device, non_blocking=True)
         if hasattr(torch, "compile"):
             self.model = torch.compile(self.model)
+
+    def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
+
+        lr = self.config['learning_rate']
+        batch_size = self.config['batch_size']
+        device = self.config['device']
+
+        torch.cuda.empty_cache()
+
+        self.init_models(train_dataset, valid_dataset)
 
         logging.info('train on {}'.format(device))
         logging.info("-- START Training --")
