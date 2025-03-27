@@ -272,7 +272,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['CDM']:
             case 'impact':
                 self.CDM.init_model(train_dataset, valid_dataset)
-                self.CDM.model.to(device, non_blocking=True)
+                self.CDM.model.to(self.config['device'], non_blocking=True)
                 if hasattr(torch, "compile"):
                     self.CDM.model = torch.compile(self.CDM.model)
 
