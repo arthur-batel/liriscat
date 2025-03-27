@@ -112,6 +112,8 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'n_query': n_query,
         'CDM': CDM,
         'i_fold': i_fold,
+        'num_inner_users_epochs':num_inner_users_epochs,
+        'num_inner_epochs':num_inner_epochs,
     }
 
 def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
