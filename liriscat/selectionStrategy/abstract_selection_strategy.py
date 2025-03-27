@@ -7,7 +7,7 @@ import numba
 import numpy as np
 from itertools import chain
 from stat import S_IREAD
-
+from IMPACT.model.IMPACT import resp_to_mod
 from sklearn.metrics import roc_auc_score
 from torch.cuda import device
 from torch.utils.data import DataLoader
@@ -190,6 +190,11 @@ class AbstractSelectionStrategy(ABC):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
+
+        match self.config['CDM']:
+            case 'impact':
+                self.CDM.model.R = test_dataset.meta_tensor
+                self.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
 
         test_dataset.split_query_meta(self.config['seed'])  # split valid query qnd meta set one and for all epochs
 
