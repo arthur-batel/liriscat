@@ -42,7 +42,7 @@ class Dataset(object):
         assert max(self._concepts_id) < self.n_categories, \
             f'Require concept ids renumbered : max concept id = {max(self._concepts_id)}; nb categories= {self.n_categories}'
         assert self._n_meta <= self._metadata['min_nb_users_logs'] - self.config["n_query"], \
-            f'Some users have not enough logs to perform to submit {self.config["n_query"]} questions: min number of user logs = {self._metadata['min_nb_users_logs']}'
+            f'Some users have not enough logs to perform to submit {self.config["n_query"]} questions: min number of user logs = {self._metadata["min_nb_users_logs"]}'
 
         self._torch_array = torch.from_numpy(df.to_numpy()).to(device=self.device)
         self._log_tensor = self._generate_log_tensor()  # precompute right away
