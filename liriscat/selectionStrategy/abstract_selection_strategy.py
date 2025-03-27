@@ -185,7 +185,6 @@ class AbstractSelectionStrategy(ABC):
 
         return mean_loss, self.valid_metric(pred_tensor, label_tensor)
 
-    @evaluation_param
     @evaluation_state
     def evaluate_test(self, test_dataset: dataset.EvalDataset):
         """CATDataset
