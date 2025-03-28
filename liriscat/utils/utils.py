@@ -67,15 +67,19 @@ def set_seed(seed):
     else:
         print("CUDA is not available. Skipping CUDA seed setting.")
 
+
 def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
                      save_params: bool = False, embs_path: str = '../embs/',
                      params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                      verbose_early_stopping: str = False, disable_tqdm: bool = True,
-                     valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
+                     valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                     valid_batch_size: int = 10000,
                      num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                      device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
-                     num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str = 'impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
+                     num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
+                     i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
+                     inner_lr: float = 0.0001, inner_user_lr: float = 0.0001) -> dict:
     if device is None:
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -112,19 +116,25 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'n_query': n_query,
         'CDM': CDM,
         'i_fold': i_fold,
-        'num_inner_users_epochs':num_inner_users_epochs,
-        'num_inner_epochs':num_inner_epochs,
+        'num_inner_users_epochs': num_inner_users_epochs,
+        'num_inner_epochs': num_inner_epochs,
+        "inner_lr": inner_lr,
+        "inner_user_lr": inner_user_lr,
     }
+
 
 def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
                        save_params: bool = False, embs_path: str = '../embs/',
                        params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                        verbose_early_stopping: str = False, disable_tqdm: bool = True,
-                       valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
+                       valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                       valid_batch_size: int = 10000,
                        num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                        device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
-                       num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
+                       num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
+                       i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
+                       inner_lr: float = 0.0001, inner_user_lr: float = 0.0001) -> dict:
     """
         Generate a configuration dictionary for the model hyperparameter search process.
 
@@ -160,22 +170,33 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
-    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params, embs_path=embs_path, params_path=params_path,
-                           early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
-                           valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
-                           lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
-                           num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs)
+    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params,
+                            embs_path=embs_path, params_path=params_path,
+                            early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping,
+                            disable_tqdm=disable_tqdm,
+                            valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size,
+                            valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq,
+                            patience=patience, device=device,
+                            lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics,
+                            profile_metrics=profile_metrics,
+                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
+                            num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr)
+
 
 def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
                          save_params: bool = True, embs_path: str = '../embs/',
                          params_path: str = '../ckpt/', early_stopping: bool = True, esc: str = 'error',
                          verbose_early_stopping: str = False, disable_tqdm: bool = False,
-                         valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048, valid_batch_size: int = 10000,
+                         valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
+                         valid_batch_size: int = 10000,
                          num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
                          device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                          flush_freq: bool = True, pred_metrics: list = ['rmse', 'mae', 'r2'],
                          profile_metrics: list = ['doa', 'pc-er'],
-                         num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM:str='impact', i_fold:int=0,num_inner_users_epochs:int=10, num_inner_epochs:int=10) -> dict:
+                         num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
+                         i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
+                         inner_lr: float = 0.0001, inner_user_lr: float = 0.0001) -> dict:
     """
         Generate a configuration dictionary for the model evaluation.
 
@@ -211,11 +232,19 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
-    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params, embs_path=embs_path, params_path=params_path,
-                            early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping, disable_tqdm=disable_tqdm,
-                            valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size, valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq, patience=patience, device=device,
-                            lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics, profile_metrics=profile_metrics,
-                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM,i_fold=i_fold,num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs)
+    return _generate_config(dataset_name=dataset_name, seed=seed, load_params=load_params, save_params=save_params,
+                            embs_path=embs_path, params_path=params_path,
+                            early_stopping=early_stopping, esc=esc, verbose_early_stopping=verbose_early_stopping,
+                            disable_tqdm=disable_tqdm,
+                            valid_metric=valid_metric, learning_rate=learning_rate, batch_size=batch_size,
+                            valid_batch_size=valid_batch_size, num_epochs=num_epochs, eval_freq=eval_freq,
+                            patience=patience, device=device,
+                            lambda_=lambda_, tensorboard=tensorboard, flush_freq=flush_freq, pred_metrics=pred_metrics,
+                            profile_metrics=profile_metrics,
+                            num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
+                            num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr)
+
 
 def evaluate_doa(E, R, metadata, concept_map):
     q = {}
@@ -286,11 +315,13 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
 
     return s / beta
 
+
 def _preprocess_list_q(list_q, max_len):
     q_array = -np.ones((len(list_q), max_len), dtype=np.int64)  # Initialize with -1 for padding
     for i, q_i in enumerate(list_q):
         q_array[i, :len(q_i)] = q_i  # Copy each list q_i into the array, pad with -1 if shorter
     return q_array
+
 
 # Helper function to convert list of lists into padded NumPy array
 def _preprocess_concept_map(list_concept_map, max_len):
@@ -302,7 +333,8 @@ def _preprocess_concept_map(list_concept_map, max_len):
 
 def compute_doa(emb: torch.Tensor, test_data):
     return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
-                                      test_data.concept_map))
+                                test_data.concept_map))
+
 
 def compute_pc_er(emb, test_data):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
@@ -359,10 +391,14 @@ def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tenso
 def compute_rm(emb: torch.Tensor, test_data):
     logging.warning("Computing RM on meta and QUERY set")
     concept_array, concept_lens = preprocess_concept_map(test_data.concept_map)
-    r= compute_rm_fold(emb.cpu().numpy(), test_data.df.to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
-                                                                 "dimension_id": int}), concept_array, concept_lens)
+    r = compute_rm_fold(emb.cpu().numpy(), test_data.df.to_records(index=False,
+                                                                   column_dtypes={'student_id': int, 'item_id': int,
+                                                                                  "correct": float,
+                                                                                  "dimension_id": int}), concept_array,
+                        concept_lens)
     logging.info(f"RM: {r}")
     return r
+
 
 def preprocess_concept_map(concept_map):
     # concept_map: dict[item_id -> list of concept_ids]
@@ -378,6 +414,7 @@ def preprocess_concept_map(concept_map):
         concept_lens[k] = len(v)
 
     return concept_array, concept_lens
+
 
 @numba.njit
 def compute_rm_fold(emb, d, concept_array, concept_lens):
@@ -516,6 +553,7 @@ def compute_rm_fold(emb, d, concept_array, concept_lens):
         return np.nan
     return c / s
 
+
 @numba.njit
 def compute_cov(x, y):
     # Compute sample covariance (same as np.cov(x,y)[0,1]) with denominator (N-1)
@@ -534,6 +572,7 @@ def compute_cov(x, y):
         s += (x[i] - mx) * (y[i] - my)
     return s / (n - 1)
 
+
 @numba.njit
 def reverse_array(arr):
     n = arr.size
@@ -541,7 +580,6 @@ def reverse_array(arr):
     for i in range(n):
         res[i] = arr[n - 1 - i]
     return res
-
 
 
 @torch.jit.script

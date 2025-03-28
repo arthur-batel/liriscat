@@ -34,17 +34,18 @@ class CATIMPACT(IMPACT) :
         super().init_model(train_data,valid_data)
 
         self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
-                                                      lr=0.0001)  # todo : adapt the learning rate
-        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=0.0001)  # todo : adapt the learning rate
+                                                      lr=self.config['inner_user_lr'])  # todo : Decide How to use a scheduler
+        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'])
 
-        # Reduce the learning rate when a metric has stopped improving
-        self.user_params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=1,
-                                                                                factor=0.5)
         self.params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=2,
                                                                            factor=0.5)
 
         self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
         self.params_scaler = torch.amp.GradScaler(self.config['device'])
+
+    def initialize_test_users(self, test_data):
+        pass
+        #self.model.users_emb.weight.data[test_data.users_id, i]
 
     def get_params(self):
         return self.model.state_dict()
