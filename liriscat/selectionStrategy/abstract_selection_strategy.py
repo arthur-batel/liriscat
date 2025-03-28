@@ -25,7 +25,7 @@ from liriscat.dataset import UserCollate, QueryEnv
 
 
 class AbstractSelectionStrategy(ABC):
-    def __init__(self, name: str = None, metadata=metadata, **config):
+    def __init__(self, name: str = None, metadata=None, **config):
         super().__init__()
 
         utils.set_seed(config['seed'])
