@@ -70,6 +70,13 @@ class CATIMPACT(IMPACT) :
         data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
+        self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
+                                                      lr=self.config[
+                                                          'inner_user_lr'])  # todo : Decide How to use a scheduler
+
+        self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
+
+
         for _ in range(self.config['num_inner_users_epochs']) :
             self.user_params_optimizer.zero_grad()
 
