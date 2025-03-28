@@ -25,7 +25,7 @@ from liriscat.dataset import UserCollate, QueryEnv
 
 
 class AbstractSelectionStrategy(ABC):
-    def __init__(self, name: str = None, **config):
+    def __init__(self, name: str = None, metadata=metadata, **config):
         super().__init__()
 
         utils.set_seed(config['seed'])
@@ -84,6 +84,9 @@ class AbstractSelectionStrategy(ABC):
         match config['CDM']:
             case 'impact':
                 self.CDM = CDM.CATIMPACT(**config)
+            case 'irt':
+                irt_config = utils.convert_config_to_EduCAT(config, metadata)
+                self.CDM = CDM.CATIRT(**irt_config)
 
     @property
     def name(self):
@@ -169,7 +172,7 @@ class AbstractSelectionStrategy(ABC):
 
             with torch.enable_grad():
                 self.CDM.model.train()
-                self.CDM.update_users(valid_query_env.feed_IMPACT_query())
+                self.CDM.update_users(valid_query_env.feed_IMPACT_sub())
                 self.CDM.model.eval()
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -223,7 +226,7 @@ class AbstractSelectionStrategy(ABC):
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_users(test_query_env.feed_IMPACT_query())
+                    self.CDM.update_users(test_query_env.feed_IMPACT_sub())
                     self.CDM.model.eval()
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -327,7 +330,7 @@ class AbstractSelectionStrategy(ABC):
 
                     train_query_env.update(actions, t)
 
-                    self.CDM.update_users(train_query_env.feed_IMPACT_query())
+                    self.CDM.update_users(train_query_env.feed_IMPACT_sub())
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
