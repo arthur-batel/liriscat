@@ -89,11 +89,10 @@ class CATIMPACT(IMPACT) :
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
                     print(loss)
-
                 self.user_params_optimizer.zero_grad()
-                loss.backward()
-                self.user_params_optimizer.step()
-
+                self.user_params_scaler.scale(loss).backward()
+                self.user_params_scaler.step(self.user_params_optimizer)
+                self.user_params_scaler.update()
 
     def get_KLI(self, query_data) :
 
