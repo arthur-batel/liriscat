@@ -522,8 +522,6 @@ class QueryEnv:
             self.sub_labels[idx:self._current_charged_log_nb] = new_labels
             self.sub_category_ids[idx:self._current_charged_log_nb] = new_category_ids
 
-            print("update",new_question_ids[0])
-
     def get_query_options(self,t):
         """
         Return a dictionary with the tensors (batch_size * (data.n_query -t)) of the query questions for each user

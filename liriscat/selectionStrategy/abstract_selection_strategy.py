@@ -216,12 +216,11 @@ class AbstractSelectionStrategy(ABC):
 
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
-            print("---")
+
             for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
                 # Select the action (question to submit)
                 actions = self.select_action(test_query_env.get_query_options(t))
-                print(actions[:2])
 
                 test_query_env.update(actions, t)
 

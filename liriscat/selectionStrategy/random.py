@@ -15,7 +15,6 @@ class Random(AbstractSelectionStrategy):
     def select_action(self,options_dict):
 
         # Generate random indices efficiently
-        print("query_question_shape",options_dict['query_questions'].shape)
         remove_indices = torch.randint(options_dict['query_len'].max(), size=options_dict['query_len'].shape, device=self.device)
         remove_indices = torch.remainder(remove_indices, options_dict['query_len'])
 
