@@ -195,6 +195,8 @@ class AbstractSelectionStrategy(ABC):
             case 'impact':
                 self.CDM.model.R = test_dataset.meta_tensor
                 self.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
+                self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
+                self.CDM.initialize_test_users(test_dataset)
 
         test_dataset.split_query_meta(self.config['seed'])  # split valid query qnd meta set one and for all epochs
 
@@ -212,7 +214,7 @@ class AbstractSelectionStrategy(ABC):
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
 
-            for t in tqdm(range(self.config['n_query'])):
+            for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
                 # Select the action (question to submit)
                 actions = self.select_action(t, test_query_env)

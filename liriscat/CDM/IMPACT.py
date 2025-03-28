@@ -44,8 +44,12 @@ class CATIMPACT(IMPACT) :
         self.params_scaler = torch.amp.GradScaler(self.config['device'])
 
     def initialize_test_users(self, test_data):
-        pass
-        #self.model.users_emb.weight.data[test_data.users_id, i]
+        train_valid_users = torch.tensor(list(set(range(test_data.n_users)) - set(test_data.users_id.tolist())),
+                                         device=self.config['device'])
+        ave = self.model.users_emb(train_valid_users).mean(dim=0)
+        std = self.model.users_emb(train_valid_users).std(dim=0)
+        self.model.users_emb.weight.data[test_data.users_id, :] = torch.normal(
+            ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1))
 
     def get_params(self):
         return self.model.state_dict()
