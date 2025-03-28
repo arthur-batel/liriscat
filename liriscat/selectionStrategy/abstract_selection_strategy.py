@@ -224,10 +224,15 @@ class AbstractSelectionStrategy(ABC):
 
                 test_query_env.update(actions, t)
 
+                print("question_ids fed",test_query_env.feed_IMPACT_sub()["question_ids"])
+                print("user_ids fed", test_query_env.feed_IMPACT_sub()["user_ids"])
+
                 with torch.enable_grad():
                     self.CDM.model.train()
                     self.CDM.update_users(test_query_env.feed_IMPACT_sub())
                     self.CDM.model.eval()
+
+                print("m_user_ids",m_user_ids)
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
