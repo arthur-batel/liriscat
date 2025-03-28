@@ -7,16 +7,17 @@ import warnings
 
 
 class Random(AbstractSelectionStrategy):
-    def __init__(self, **config):
-        super().__init__('Random', **config)
+    def __init__(self, metadata,**config):
+        super().__init__('Random', metadata, **config)
         self.model = RandomModel()
         logging.info(self.name)
 
-    def select_action(self,t,env):
+    def select_action(self,options_dict):
 
         # Generate random indices efficiently
-        remove_indices = torch.randint(t, env.query_len.max(), size=env.query_len.shape, device=self.device)
-        remove_indices = torch.remainder(remove_indices, env.query_len - t) + t
+        print("query_question_shape",options_dict['query_questions'].shape)
+        remove_indices = torch.randint(options_dict['query_len'].max(), size=options_dict['query_len'].shape, device=self.device)
+        remove_indices = torch.remainder(remove_indices, options_dict['query_len'])
 
         return remove_indices
 
