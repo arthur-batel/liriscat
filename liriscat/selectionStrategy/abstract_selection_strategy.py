@@ -105,7 +105,7 @@ class AbstractSelectionStrategy(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def select_action(self, t, env):
+    def select_action(self, options_dict):
         raise NotImplementedError
 
     @abstractmethod
@@ -166,7 +166,7 @@ class AbstractSelectionStrategy(ABC):
             for t in range(self.config['n_query']):
 
                 # Select the action (question to submit)
-                actions = self.select_action(t, valid_query_env)
+                actions = self.select_action(valid_query_env.get_query_options(t))
 
                 valid_query_env.update(actions, t)
 
@@ -220,7 +220,7 @@ class AbstractSelectionStrategy(ABC):
             for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
                 # Select the action (question to submit)
-                actions = self.select_action(t, test_query_env)
+                actions = self.select_action(test_query_env.get_query_options(t))
                 print(actions[:2])
 
                 test_query_env.update(actions, t)
@@ -327,7 +327,7 @@ class AbstractSelectionStrategy(ABC):
 
                 for t in range(self.config['n_query']):
 
-                    actions = self.select_action(t, train_query_env)
+                    actions = self.select_action(train_query_env.get_query_options(t))
 
                     train_query_env.update(actions, t)
 
