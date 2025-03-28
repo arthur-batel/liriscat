@@ -531,8 +531,8 @@ class QueryEnv:
         :return:
         """
         return {
-        'query_questions':self.query_questions[self.row_idx, self.query_indices[t]],
-        'query_users' :self.query_users_vec[self.row_idx, self.query_indices[t]],
+        'query_questions':self.query_questions[self.row_idx, self.query_indices[t:]],
+        'query_users' :self.query_users_vec[self.row_idx, self.query_indices[t:]],
         'query_length':self.query_len-t,
         }
 
