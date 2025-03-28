@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.utils.data as data
 
 from IMPACT.model.abstract_model import AbstractModel
-from CAT.model import IRTModel
+
 from IMPACT.dataset import *
 from IMPACT.model import IMPACT
 import torch.nn.functional as F
@@ -86,8 +86,8 @@ class CATIMPACT(IMPACT) :
                 self.user_params_scaler.step(self.user_params_optimizer)
                 self.user_params_scaler.update()
 
+    def get_KLI(self, query_data) :
 
-class CATIRT(IRTModel) :
+        preds = self.model(query_data)
 
-    def __init__(self, **config):
-        super().__init__(**config)
+
