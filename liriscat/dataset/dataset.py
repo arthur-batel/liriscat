@@ -533,7 +533,7 @@ class QueryEnv:
         return {
         'query_questions':self.query_questions[self.row_idx.unsqueeze(1).expand(-1,self.n_query-t), self.query_indices[t:]],
         'query_users' :self.query_users_vec,
-        'query_length':self.query_len-t,
+        'query_len':self.query_len-t,
         }
 
     def feed_IMPACT_sub(self):
