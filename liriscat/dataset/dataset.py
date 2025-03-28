@@ -352,7 +352,7 @@ class QueryEnv:
         ## Variable storing the current batch size
         self._current_batch_size = batch_size
 
-        ## Tensors storing all query data (submitted and unsubmitted
+        ## Tensors storing all query data (submitted and unsubmitted)
         self._query_len = torch.empty(batch_size, dtype=torch.long, device=device)
         self._query_users_vec = torch.empty(batch_size, dtype=torch.long, device=device)
         self._query_questions = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
@@ -362,10 +362,10 @@ class QueryEnv:
         self._query_cat_mask = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.bool, device=device)
 
         ## Tensors storing submitted query data
-        self.query_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.query_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.query_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.query_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.sub_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.sub_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.sub_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        self.sub_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
 
         ## Tensor storing the indices of the questions submitted to the user
         self._query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size, 1) # tensor of size (batch_size, n_query)
@@ -464,6 +464,7 @@ class QueryEnv:
         """
         Fill the tensor data with a new user
         """
+        # Number of query question for the current user
         self._query_len[user_idx] = n
         self._query_users_vec[user_idx] = user_id
 
@@ -488,6 +489,9 @@ class QueryEnv:
         self._meta_cat_mask[user_idx, :mc.shape[0]] = mc_mask
 
     def update(self, actions: Tensor, t: int) -> None:
+        """
+        Move selected questions from query set to submitted set
+        """
 
         with torch.no_grad():
             idx = self._current_charged_log_nb
@@ -512,21 +516,44 @@ class QueryEnv:
             self._current_charged_log_nb += new_user_ids.shape[0]
 
             # Add the new data to the set of submitted questions
-            self.query_user_ids[idx:self._current_charged_log_nb] =  new_user_ids
-            self.query_question_ids[idx:self._current_charged_log_nb] =  new_question_ids
-            self.query_labels[idx:self._current_charged_log_nb] = new_labels
-            self.query_category_ids[idx:self._current_charged_log_nb] = new_category_ids
+            self.sub_user_ids[idx:self._current_charged_log_nb] =  new_user_ids
+            self.sub_question_ids[idx:self._current_charged_log_nb] =  new_question_ids
+            self.sub_labels[idx:self._current_charged_log_nb] = new_labels
+            self.sub_category_ids[idx:self._current_charged_log_nb] = new_category_ids
 
-
-    def feed_IMPACT_query(self):
+    def get_query_options(self,t):
+        """
+        Return a dictionary with the tensors (batch_size * (data.n_query -t)) of the query questions for each user
+        :param t:
+        :return:
+        """
         return {
-            "user_ids": self.query_user_ids[:self._current_charged_log_nb],
-            "question_ids": self.query_question_ids[:self._current_charged_log_nb],
-            "labels": self.query_labels[:self._current_charged_log_nb],
-            "category_ids": self.query_category_ids[:self._current_charged_log_nb]}
+        'query_questions':self.query_questions[self.row_idx, self.query_indices[t:]],
+        'query_users' :self.query_users_vec[self.row_idx, self.query_indices[t:]],
+        'query_length':self.query_len,
+        }
+
+    def feed_IMPACT_sub(self):
+        """
+        Return the dictionary of submitted data logs for IMPACT retraining
+        :return:
+        """
+        return {
+            "user_ids": self.sub_user_ids[:self._current_charged_log_nb],
+            "question_ids": self.sub_question_ids[:self._current_charged_log_nb],
+            "labels": self.sub_labels[:self._current_charged_log_nb],
+            "category_ids": self.sub_category_ids[:self._current_charged_log_nb]}
 
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
+        """
+        Extends the query data for multiple categories handling with IMPACT format
+        :param QQ:
+        :param QL:
+        :param QC_NB:
+        :param U:
+        :return:
+        """
 
         question_ids = torch.repeat_interleave(QQ, QC_NB)
         user_ids = torch.repeat_interleave(U, QC_NB)
@@ -535,6 +562,10 @@ class QueryEnv:
         return user_ids, question_ids, labels
 
     def generate_IMPACT_meta(self):
+        """
+        Extends the meta data for multiple categories handling with IMPACT format
+        :return:
+        """
         MQ = self.meta_questions.reshape(-1)
         ML = self.meta_responses.reshape(-1)
         MC_NB = self.meta_cat_nb.reshape(-1)
