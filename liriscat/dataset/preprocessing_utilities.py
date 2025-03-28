@@ -71,6 +71,77 @@ def split_data_horizontally(df):
     data = data.groupby(key_attrs).agg(d).reset_index()
     return data
 
+def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
+    """
+    Split data (list of triplets) into train, validation, and test sets.
+
+    :param quadruplet: List of triplets (sid, qid, score)
+    :type quadruplet: list
+    :param test_prop: Fraction of the test set
+    :type test_prop: float
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :param least_test_length: Minimum number of items a student must have to be included in the test set.
+    :type least_test_length: int or None
+    :return: Train, validation, and test sets.
+    :rtype: list, list, list
+    """
+
+    kf = KFold(n_splits=folds_nb, shuffle=True)
+    df = pd.DataFrame(quadruplet)
+    df.columns = ["student_id","item_id","answer","dimension_id"]
+
+    train = [[]  for _ in range(folds_nb)]
+    valid = [[]  for _ in range(folds_nb)]
+    test = [[]  for _ in range(folds_nb)]
+
+    for i_group, group in df.groupby('student_id'):
+        group_idxs = np.array(group.index)
+
+        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)):
+
+            train_valid_item_idx = group_idxs[train_valid_fold_idx]
+            test_item_idx = group_idxs[test_fold_idx]
+
+            train_item_idx, valid_item_idx = train_test_split(train_valid_item_idx, test_size=float(valid_prop) / (
+                        1.0 - float(test_prop)), shuffle=True)
+
+            train[i_fold] += df.loc[train_item_idx, :].values.tolist()
+            valid[i_fold] += df.loc[valid_item_idx, :].values.tolist()
+            test[i_fold] += df.loc[test_item_idx, :].values.tolist()
+
+    return train, valid, test
+
+def quadruplet_format(data: pd.DataFrame):
+    """
+    Convert DataFrame into a list of quadruplets with correct data types.
+
+    :param data: Dataset containing columns 'user_id', 'item_id', 'correct', and 'dimension_id'
+    :type data: pd.DataFrame
+    :return: List of quadruplets [sid, qid, score, dim]
+    :rtype: list
+    """
+    # Ensure data types
+    data['user_id'] = data['user_id'].astype(int)
+    data['item_id'] = data['item_id'].astype(int)
+    data['dimension_id'] = data['dimension_id'].astype(int)
+    # 'correct' column might be float or int, depending on your data
+
+    # Extract columns as lists
+    user_ids = data['user_id'].tolist()
+    item_ids = data['item_id'].tolist()
+    corrects = data['correct'].tolist()
+    dimension_ids = data['dimension_id'].tolist()
+
+    # Combine columns into a list of quadruplets
+    quadruplets = list(zip(user_ids, item_ids, corrects, dimension_ids))
+
+    # Convert each quadruplet to a list
+    quadruplets = [list(quad) for quad in quadruplets]
+
+    return quadruplets
+
+
 def densify(data: pd.DataFrame, grp_by_attr: str, count_attr: str, thd: int):
     """
     Filter out groups in a DataFrame based on a count threshold.

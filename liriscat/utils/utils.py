@@ -246,34 +246,6 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
                             inner_lr=inner_lr, inner_user_lr=inner_user_lr)
 
-def quadruplet_format(data: pd.DataFrame):
-    """
-    Convert DataFrame into a list of quadruplets with correct data types.
-
-    :param data: Dataset containing columns 'user_id', 'item_id', 'correct', and 'dimension_id'
-    :type data: pd.DataFrame
-    :return: List of quadruplets [sid, qid, score, dim]
-    :rtype: list
-    """
-    # Ensure data types
-    data['user_id'] = data['user_id'].astype(int)
-    data['item_id'] = data['item_id'].astype(int)
-    data['dimension_id'] = data['dimension_id'].astype(int)
-    # 'correct' column might be float or int, depending on your data
-
-    # Extract columns as lists
-    user_ids = data['user_id'].tolist()
-    item_ids = data['item_id'].tolist()
-    corrects = data['correct'].tolist()
-    dimension_ids = data['dimension_id'].tolist()
-
-    # Combine columns into a list of quadruplets
-    quadruplets = list(zip(user_ids, item_ids, corrects, dimension_ids))
-
-    # Convert each quadruplet to a list
-    quadruplets = [list(quad) for quad in quadruplets]
-
-    return quadruplets
 
 def convert_config_to_EduCAT(config, metadata, strategy_name: str, threshold: float = None, betas: float = None,
                              start=None, end=None, policy_path=None, prednet_len1=None, prednet_len2=None,
