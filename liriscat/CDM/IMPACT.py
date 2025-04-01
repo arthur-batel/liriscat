@@ -31,7 +31,7 @@ class CATIMPACT(IMPACT) :
     def __init__(self, **config):
         super().__init__(**config)
 
-    def init_model(self, train_data: Dataset, valid_data: Dataset):
+    def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
 
         self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
