@@ -257,10 +257,12 @@ class AbstractSelectionStrategy(ABC):
                 self.CDM.init_model(train_dataset, valid_dataset)
 
                 if hasattr(torch, "compile"):
+                    print("compiling CDM model")
                     self.CDM.model = torch.compile(self.CDM.model)
 
 
         if hasattr(torch, "compile"):
+            print("compiling selection model")
             self.model = torch.compile(self.model)
 
         self.model.to(self.config['device'])
