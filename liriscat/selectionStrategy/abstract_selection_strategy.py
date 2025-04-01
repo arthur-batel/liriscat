@@ -193,6 +193,7 @@ class AbstractSelectionStrategy(ABC):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
+        test_dataset.split_query_meta(self.config['seed'])
 
         match self.config['CDM']:
             case 'impact':
@@ -201,7 +202,7 @@ class AbstractSelectionStrategy(ABC):
                 self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
                 self.CDM.initialize_test_users(test_dataset)
 
-        test_dataset.split_query_meta(self.config['seed'])  # split valid query qnd meta set one and for all epochs
+          # split valid query qnd meta set one and for all epochs
 
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
