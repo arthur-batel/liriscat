@@ -265,7 +265,8 @@ class AbstractSelectionStrategy(ABC):
             print("compiling selection model")
             self.model = torch.compile(self.model)
 
-        self.model.to(self.config['device'])
+        if hasattr(self.model, "to"):
+            self.model.to(self.config['device'])
 
 
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
