@@ -92,9 +92,11 @@ class CATIMPACT(IMPACT) :
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
                     sum_loss += loss.item()
                 self.user_params_optimizer.zero_grad()
-                self.user_params_scaler.scale(loss).backward()
-                self.user_params_scaler.step(self.user_params_optimizer)
-                self.user_params_scaler.update()
+                loss.backward()
+                self.user_params_optimizer.step()
+                # self.user_params_scaler.scale(loss).backward()
+                # self.user_params_scaler.step(self.user_params_optimizer)
+                # self.user_params_scaler.update()
             print("Loss: ", sum_loss/n_batches)
 
     def get_KLI(self, query_data) :
