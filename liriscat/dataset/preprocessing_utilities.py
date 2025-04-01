@@ -321,7 +321,7 @@ def rescaling_dict(metadata: pd.DataFrame,q2n):
             print(f'{e} were removed from dataset')
     return [response_range_dict, min_response_dict, max_response_dict]
 
-def split_users(df, folds_nb=5) :
+def split_users(df, folds_nb=5, seed=0) :
     """
     k-fold cross validationsplit of users
 
@@ -329,7 +329,7 @@ def split_users(df, folds_nb=5) :
 
     users_idx = df['user_id'].unique()
     N = len(users_idx) // 5
-    random.Random().shuffle(users_idx)
+    random.Random(seed).shuffle(users_idx)
 
     train = [[] for _ in range(folds_nb)]
     valid = [[] for _ in range(folds_nb)]
