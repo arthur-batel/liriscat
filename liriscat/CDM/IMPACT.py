@@ -76,9 +76,11 @@ class CATIMPACT(IMPACT) :
 
         self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
 
+        sum_loss = 0
+        n_batches = len(dataloader)
+
 
         for _ in range(self.config['num_inner_users_epochs']) :
-
 
             for batch in dataloader:
                 user_ids = batch["user_ids"]
@@ -88,11 +90,12 @@ class CATIMPACT(IMPACT) :
 
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
-                    print(loss)
+                    sum_loss += loss.item()
                 self.user_params_optimizer.zero_grad()
                 self.user_params_scaler.scale(loss).backward()
                 self.user_params_scaler.step(self.user_params_optimizer)
                 self.user_params_scaler.update()
+            print("Loss: ", sum_loss/n_batches)
 
     def get_KLI(self, query_data) :
 
