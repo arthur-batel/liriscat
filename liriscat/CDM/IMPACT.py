@@ -74,7 +74,7 @@ class CATIMPACT(IMPACT) :
                                                       lr=self.config[
                                                           'inner_user_lr'])  # todo : Decide How to use a scheduler
 
-        self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
+        #self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
 
         sum_loss = 0
         n_batches = len(dataloader)
@@ -90,6 +90,7 @@ class CATIMPACT(IMPACT) :
 
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
+                    print("batch_loss :",loss.item())
                     sum_loss += loss.item()
                 self.user_params_optimizer.zero_grad()
                 loss.backward()
