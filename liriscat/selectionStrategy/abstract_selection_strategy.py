@@ -255,13 +255,15 @@ class AbstractSelectionStrategy(ABC):
         match self.config['CDM']:
             case 'impact':
                 self.CDM.init_model(train_dataset, valid_dataset)
-                self.CDM.model.to(self.config['device'], non_blocking=True)
+
                 if hasattr(torch, "compile"):
                     self.CDM.model = torch.compile(self.CDM.model)
 
-        self.model.to(self.config['device'], non_blocking=True)
+                self.CDM.model.to(self.config['device'])
+
         if hasattr(torch, "compile"):
             self.model = torch.compile(self.model)
+        self.model.to(self.config['device'])
 
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
 
