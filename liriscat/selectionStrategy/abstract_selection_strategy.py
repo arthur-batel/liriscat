@@ -259,9 +259,11 @@ class AbstractSelectionStrategy(ABC):
                 if hasattr(torch, "compile"):
                     self.CDM.model = torch.compile(self.CDM.model)
 
-        self.model.to(self.config['device'])
+
         if hasattr(torch, "compile"):
             self.model = torch.compile(self.model)
+
+        self.model.to(self.config['device'])
 
 
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
