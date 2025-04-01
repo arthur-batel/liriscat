@@ -49,7 +49,7 @@ class CATIMPACT(IMPACT) :
                                          device=self.config['device'])
         ave = self.model.users_emb(train_valid_users).mean(dim=0)
         std = self.model.users_emb(train_valid_users).std(dim=0)
-        self.model.users_emb.weight.data[test_data.users_id, :] = torch.normal(
+        self.model.users_emb.weight.data[list(test_data.users_id), :] = torch.normal(
             ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1))
 
     def get_params(self):
