@@ -70,7 +70,7 @@ class CATIMPACT(IMPACT) :
         data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
-        self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
+        user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
                                                       lr=self.config[
                                                           'inner_user_lr'])  # todo : Decide How to use a scheduler
 
@@ -78,7 +78,6 @@ class CATIMPACT(IMPACT) :
 
         sum_loss = 0
         n_batches = len(dataloader)
-
 
         for _ in range(self.config['num_inner_users_epochs']) :
 
@@ -91,9 +90,9 @@ class CATIMPACT(IMPACT) :
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
                     sum_loss += loss.item()
-                self.user_params_optimizer.zero_grad()
+                user_params_optimizer.zero_grad()
                 loss.backward()
-                self.user_params_optimizer.step()
+                user_params_optimizer.step()
                 # self.user_params_scaler.scale(loss).backward()
                 # self.user_params_scaler.step(self.user_params_optimizer)
                 # self.user_params_scaler.update()
