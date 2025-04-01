@@ -90,7 +90,6 @@ class CATIMPACT(IMPACT) :
 
                 with torch.amp.autocast('cuda'):
                     loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
-                    print("batch_loss :",loss.item())
                     sum_loss += loss.item()
                 self.user_params_optimizer.zero_grad()
                 loss.backward()
