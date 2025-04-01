@@ -51,3 +51,6 @@ class RandomModel(nn.Module):
         super(RandomModel, self).__init__()
 
         self.rd_seed = torch.nn.parameter.Parameter()
+
+    def forward(self, x):
+        pass

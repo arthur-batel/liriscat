@@ -136,13 +136,13 @@ class AbstractSelectionStrategy(ABC):
                 self.state = "eval"
                 # Call the actual method
                 self.CDM.model.eval()
-                self.model.eval()
+                self.model.eval() # todo : putting in eval mode again
                 with torch.no_grad(), torch.amp.autocast('cuda'):
                     result = func(*args, **kwargs)
             finally:
                 # Restore the previous state after method execution
                 self.CDM.model.train()
-                self.model.train()
+                self.model.train() # todo : putting in eval mode again
                 self.state = prev_state
 
             return result
