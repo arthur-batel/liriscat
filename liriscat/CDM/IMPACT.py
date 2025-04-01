@@ -76,11 +76,11 @@ class CATIMPACT(IMPACT) :
 
         #self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
 
-        sum_loss = 0
+
         n_batches = len(dataloader)
 
         for _ in range(self.config['num_inner_users_epochs']) :
-
+            sum_loss = 0
             for batch in dataloader:
                 user_ids = batch["user_ids"]
                 question_ids = batch["question_ids"]
