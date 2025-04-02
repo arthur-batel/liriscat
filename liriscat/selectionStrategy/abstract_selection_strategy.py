@@ -198,7 +198,7 @@ class AbstractSelectionStrategy(ABC):
 
         match self.config['CDM']:
             case 'impact':
-                self.CDM.model.R = test_dataset.meta_tensor
+                self.CDM.model.R = test_dataset.log_tensor
                 self.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
                 self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
                 self.CDM.initialize_test_users(test_dataset)
