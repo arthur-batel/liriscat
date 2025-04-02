@@ -106,6 +106,7 @@ class AbstractSelectionStrategy(ABC):
 
     @abstractmethod
     def select_action(self, options_dict):
+        #return the indice of the question to submit
         raise NotImplementedError
 
     @abstractmethod
@@ -213,7 +214,7 @@ class AbstractSelectionStrategy(ABC):
         emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
         log_idx = 0
-        for _ in test_loader:
+        for _ in test_loader: #User collate directly modify the query environment
 
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
@@ -224,9 +225,6 @@ class AbstractSelectionStrategy(ABC):
                 actions = self.select_action(test_query_env.get_query_options(t))
 
                 test_query_env.update(actions, t)
-
-                print("question_ids fed",test_query_env.feed_IMPACT_sub()["question_ids"])
-                print("user_ids fed", test_query_env.feed_IMPACT_sub()["user_ids"])
 
                 with torch.enable_grad():
                     self.CDM.model.train()
