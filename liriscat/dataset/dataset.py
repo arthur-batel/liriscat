@@ -514,7 +514,10 @@ class UserCollate(object):
 
         self.query_env.loading_new_users(len(batch))
 
-        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch.items()):
+        for i, b in enumerate(batch):
+
+            (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) = b.values()
+
             ### ----- Query questions
             # Number of query question for the current user
             n = qq.shape[0]
