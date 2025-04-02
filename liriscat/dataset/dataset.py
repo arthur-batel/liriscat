@@ -183,18 +183,18 @@ class CATDataset(Dataset, data.dataset.Dataset):
         meta_index = observed_index[-self.n_meta:]
         query_index = observed_index[:self.config['n_query']]
 
-        return (self.user_idx2id[index],  # int
-                data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
-                data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
-                self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
+        return {'u_idx' :self.user_idx2id[index],  # int
+                'qq':data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
+                'ql':data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
+                'qc':self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                'qc_mask':self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                'qc_nb':self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
 
-                data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
-                data['labels'][meta_index],  # 1D torch.Tensor, size = M
-                self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                self.cat_mask[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                self.cat_nb[data['q_ids'][meta_index]])  # 1D torch.Tensor, size = M
+                'mq':data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
+                'ml':data['labels'][meta_index],  # 1D torch.Tensor, size = M
+                'mc':self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
+                'mc_mask':self.cat_mask[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
+                'mc_nb':self.cat_nb[data['q_ids'][meta_index]]}  # 1D torch.Tensor, size = M
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -240,9 +240,9 @@ class EvalDataset(CATDataset):
             sample_tuple = self.generate_sample(index)
 
             self._meta_mask.index_put_(
-                (torch.full(sample_tuple[5].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
-                 sample_tuple[5]),
-                torch.ones_like(sample_tuple[5], dtype=torch.bool)
+                (torch.full(sample_tuple['mq'].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
+                 sample_tuple['mq']),
+                torch.ones_like(sample_tuple['mq'], dtype=torch.bool)
             )
             self._precomputed_batch[index] = sample_tuple
 
@@ -514,7 +514,7 @@ class UserCollate(object):
 
         self.query_env.loading_new_users(len(batch))
 
-        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch):
+        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch.items()):
             ### ----- Query questions
             # Number of query question for the current user
             n = qq.shape[0]

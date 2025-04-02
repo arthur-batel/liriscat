@@ -233,7 +233,6 @@ class AbstractSelectionStrategy(ABC):
                     self.CDM.update_users(test_query_env.feed_IMPACT_sub())
                     self.CDM.model.eval()
 
-                print("m_user_ids",m_user_ids)
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
