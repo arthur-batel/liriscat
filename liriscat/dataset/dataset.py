@@ -1,5 +1,7 @@
 import logging
 import warnings
+
+from numpy.ma.core import max_filler
 from torch.utils import data
 import itertools
 import numpy as np
@@ -259,16 +261,16 @@ class QueryEnv:
         - store the data
         - save and update there membership to the three sets
         - transform the data to IMPACT compatible format
-    Each batch of data overwrites the previous one to optimize GPU memory allocation
+    The data of each batch of users overwrites the previous one to optimize GPU memory allocation
     """
 
     def __init__(self, data: CATDataset, device: torch.device, batch_size: int):
         self.n_query = data.config['n_query']
         self.device = device
-        self.cq_max = data.cq_max
+        self.cq_max = data.cq_max # Max nb of categories per question
 
         max_nb_cat_per_question = data.metadata['max_nb_categories_per_question']
-        data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
+        max_data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
 
         # Initialize attributes
         ## Variable storing the current batch size
@@ -283,11 +285,11 @@ class QueryEnv:
         self._query_cat = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.long, device=device)
         self._query_cat_mask = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.bool, device=device)
 
-        ## Tensors storing submitted query data
-        self.sub_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        ## Tensors storing submitted query data (after expansion of the logs due to multiple categories per question)
+        self.sub_user_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_question_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_labels = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_category_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
 
         ## Tensor storing the indices of the questions submitted to the user
         self._query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size,
@@ -295,7 +297,7 @@ class QueryEnv:
         self._row_idx = torch.arange(batch_size)  # tensor of size (batch_size)
 
         ## Submitted state
-        self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users)
+        self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users). Reinint at each user batch by UserCollate
 
         ## Tensors storing meta data
         self._meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
