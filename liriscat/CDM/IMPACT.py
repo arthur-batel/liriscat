@@ -10,10 +10,12 @@ from IMPACT.model.abstract_model import AbstractModel
 
 from IMPACT.dataset import *
 from IMPACT.model import IMPACT
+
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from liriscat import dataset
+from liriscat import utils
 
 import warnings
 import torch
@@ -49,8 +51,13 @@ class CATIMPACT(IMPACT) :
                                          device=self.config['device'])
         ave = self.model.users_emb(train_valid_users).mean(dim=0)
         std = self.model.users_emb(train_valid_users).std(dim=0)
-        self.model.users_emb.weight.data[list(test_data.users_id), :] = torch.normal(
-            ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1))
+
+        E = torch.normal(ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1)/2)
+        E = E - E.mean(dim=0) + ave
+
+        self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
+
+
 
     def get_params(self):
         return self.model.state_dict()
@@ -66,7 +73,9 @@ class CATIMPACT(IMPACT) :
             self.params_scaler.step(self.params_optimizer)
             self.params_scaler.update()
 
-    def update_users(self,query_data) :
+    def update_users(self,query_data, meta_data, meta_labels) :
+        m_user_ids, m_question_ids, m_category_ids = meta_data
+
         data = dataset.SubmittedDataset(query_data)
         dataloader = DataLoader(data, batch_size=2048, shuffle=True)
 
@@ -74,28 +83,36 @@ class CATIMPACT(IMPACT) :
                                                       lr=self.config[
                                                           'inner_user_lr'])  # todo : Decide How to use a scheduler
 
-        #self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
+        self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
 
 
         n_batches = len(dataloader)
 
         for _ in range(self.config['num_inner_users_epochs']) :
             sum_loss = 0
+
+
             for batch in dataloader:
                 user_ids = batch["user_ids"]
                 question_ids = batch["question_ids"]
                 labels = batch["labels"]
                 category_ids = batch["category_ids"]
 
-                with torch.amp.autocast('cuda'):
-                    loss = self._compute_loss(user_ids, question_ids, category_ids, labels)
-                    sum_loss += loss.item()
+                preds = self.model(m_user_ids, m_question_ids, m_category_ids)
+
+                print("meta mi_acc = ", utils.micro_ave_accuracy(meta_labels, preds))
+
                 user_params_optimizer.zero_grad()
-                loss.backward()
-                user_params_optimizer.step()
-                # self.user_params_scaler.scale(loss).backward()
-                # self.user_params_scaler.step(self.user_params_optimizer)
-                # self.user_params_scaler.update()
+
+                with torch.amp.autocast('cuda'):
+                    loss = self._compute_loss(m_user_ids, m_question_ids, m_category_ids, meta_labels)
+                    sum_loss += loss.item()
+
+                # loss.backward()
+                # user_params_optimizer.step()
+                self.user_params_scaler.scale(loss).backward()
+                self.user_params_scaler.step(self.user_params_optimizer)
+                self.user_params_scaler.update()
             print("Loss: ", sum_loss/n_batches)
 
     def get_KLI(self, query_data) :

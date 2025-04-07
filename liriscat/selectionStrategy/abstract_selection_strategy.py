@@ -106,6 +106,7 @@ class AbstractSelectionStrategy(ABC):
 
     @abstractmethod
     def select_action(self, options_dict):
+        #return the indice of the question to submit
         raise NotImplementedError
 
     @abstractmethod
@@ -197,7 +198,7 @@ class AbstractSelectionStrategy(ABC):
 
         match self.config['CDM']:
             case 'impact':
-                self.CDM.model.R = test_dataset.meta_tensor
+                self.CDM.model.R = test_dataset.log_tensor
                 self.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
                 self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
                 self.CDM.initialize_test_users(test_dataset)
@@ -213,7 +214,7 @@ class AbstractSelectionStrategy(ABC):
         emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
         log_idx = 0
-        for _ in test_loader:
+        for _ in test_loader: #User collate directly modify the query environment
 
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
@@ -225,15 +226,11 @@ class AbstractSelectionStrategy(ABC):
 
                 test_query_env.update(actions, t)
 
-                print("question_ids fed",test_query_env.feed_IMPACT_sub()["question_ids"])
-                print("user_ids fed", test_query_env.feed_IMPACT_sub()["user_ids"])
-
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_users(test_query_env.feed_IMPACT_sub())
+                    self.CDM.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
                     self.CDM.model.eval()
 
-                print("m_user_ids",m_user_ids)
 
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
