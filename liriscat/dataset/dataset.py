@@ -1,5 +1,6 @@
 import logging
 import warnings
+
 from torch.utils import data
 import itertools
 import numpy as np
@@ -14,7 +15,7 @@ from IMPACT.dataset import Dataset as IMPACTDataset
 
 class Dataset(IMPACTDataset):
 
-    def __init__(self, df, concept_map, metadata, config):
+    def __init__(self, df, concept_map, metadata, config, nb_modalities):
         """
         Args:
             df: Dataframe with columns (user_id, item_id, correct, dimension_id)
@@ -23,7 +24,7 @@ class Dataset(IMPACTDataset):
         """
 
         super().__init__(df.to_records(index=False, column_dtypes={'user_id': int, 'item_id': int, "dimension_id": int,
-                                                                   "correct": float}), concept_map, metadata)
+                                                                   "correct": float}), concept_map, metadata,nb_modalities)
 
         self._df = df
         self._config = config
@@ -161,14 +162,14 @@ class CATDataset(Dataset, data.dataset.Dataset):
     Train dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config):
+    def __init__(self, data, concept_map, metadata, config,nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        Dataset.__init__(self, data, concept_map, metadata, config)
+        Dataset.__init__(self, data, concept_map, metadata, config,nb_modalities)
 
         self.rng = np.random.default_rng(self.query_seed)
 
@@ -183,18 +184,18 @@ class CATDataset(Dataset, data.dataset.Dataset):
         meta_index = observed_index[-self.n_meta:]
         query_index = observed_index[:self.config['n_query']]
 
-        return (self.user_idx2id[index],  # int
-                data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
-                data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
-                self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
+        return {'u_idx' :self.user_idx2id[index],  # int
+                'qq':data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
+                'ql':data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
+                'qc':self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                'qc_mask':self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
+                'qc_nb':self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
 
-                data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
-                data['labels'][meta_index],  # 1D torch.Tensor, size = M
-                self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                self.cat_mask[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                self.cat_nb[data['q_ids'][meta_index]])  # 1D torch.Tensor, size = M
+                'mq':data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
+                'ml':data['labels'][meta_index],  # 1D torch.Tensor, size = M
+                'mc':self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
+                'mc_mask':self.cat_mask[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
+                'mc_nb':self.cat_nb[data['q_ids'][meta_index]]}  # 1D torch.Tensor, size = M
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -209,14 +210,14 @@ class EvalDataset(CATDataset):
     valid and test dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config):
+    def __init__(self, data, concept_map, metadata, config,nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        super().__init__(data, concept_map, metadata, config)
+        super().__init__(data, concept_map, metadata, config, nb_modalities)
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
         self._precomputed_batch = {}
 
@@ -240,9 +241,9 @@ class EvalDataset(CATDataset):
             sample_tuple = self.generate_sample(index)
 
             self._meta_mask.index_put_(
-                (torch.full(sample_tuple[5].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
-                 sample_tuple[5]),
-                torch.ones_like(sample_tuple[5], dtype=torch.bool)
+                (torch.full(sample_tuple['mq'].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
+                 sample_tuple['mq']),
+                torch.ones_like(sample_tuple['mq'], dtype=torch.bool)
             )
             self._precomputed_batch[index] = sample_tuple
 
@@ -259,16 +260,16 @@ class QueryEnv:
         - store the data
         - save and update there membership to the three sets
         - transform the data to IMPACT compatible format
-    Each batch of data overwrites the previous one to optimize GPU memory allocation
+    The data of each batch of users overwrites the previous one to optimize GPU memory allocation
     """
 
     def __init__(self, data: CATDataset, device: torch.device, batch_size: int):
         self.n_query = data.config['n_query']
         self.device = device
-        self.cq_max = data.cq_max
+        self.cq_max = data.cq_max # Max nb of categories per question
 
         max_nb_cat_per_question = data.metadata['max_nb_categories_per_question']
-        data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
+        max_data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
 
         # Initialize attributes
         ## Variable storing the current batch size
@@ -283,11 +284,11 @@ class QueryEnv:
         self._query_cat = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.long, device=device)
         self._query_cat_mask = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.bool, device=device)
 
-        ## Tensors storing submitted query data
-        self.sub_user_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_question_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_labels = torch.empty(data_batch_size, dtype=torch.long, device=device)
-        self.sub_category_ids = torch.empty(data_batch_size, dtype=torch.long, device=device)
+        ## Tensors storing submitted query data (after expansion of the logs due to multiple categories per question)
+        self.sub_user_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_question_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_labels = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        self.sub_category_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
 
         ## Tensor storing the indices of the questions submitted to the user
         self._query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size,
@@ -295,7 +296,7 @@ class QueryEnv:
         self._row_idx = torch.arange(batch_size)  # tensor of size (batch_size)
 
         ## Submitted state
-        self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users)
+        self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users). Reinint at each user batch by UserCollate
 
         ## Tensors storing meta data
         self._meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
@@ -514,7 +515,10 @@ class UserCollate(object):
 
         self.query_env.loading_new_users(len(batch))
 
-        for i, (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) in enumerate(batch):
+        for i, b in enumerate(batch):
+
+            (u, qq, ql, qc, qc_mask, qc_nb, mq, ml, mc, mc_mask, mc_nb) = b.values()
+
             ### ----- Query questions
             # Number of query question for the current user
             n = qq.shape[0]
