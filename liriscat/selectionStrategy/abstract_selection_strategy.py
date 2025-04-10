@@ -228,7 +228,7 @@ class AbstractSelectionStrategy(ABC):
 
                 with torch.enable_grad():
                     self.CDM.model.train()
-                    self.CDM.update_users(test_query_env.feed_IMPACT_sub())
+                    self.CDM.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
                     self.CDM.model.eval()
 
 
