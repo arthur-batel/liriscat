@@ -15,7 +15,7 @@ from IMPACT.dataset import Dataset as IMPACTDataset
 
 class Dataset(IMPACTDataset):
 
-    def __init__(self, df, concept_map, metadata, config):
+    def __init__(self, df, concept_map, metadata, config, nb_modalities):
         """
         Args:
             df: Dataframe with columns (user_id, item_id, correct, dimension_id)
@@ -24,7 +24,7 @@ class Dataset(IMPACTDataset):
         """
 
         super().__init__(df.to_records(index=False, column_dtypes={'user_id': int, 'item_id': int, "dimension_id": int,
-                                                                   "correct": float}), concept_map, metadata)
+                                                                   "correct": float}), concept_map, metadata,nb_modalities)
 
         self._df = df
         self._config = config
@@ -162,14 +162,14 @@ class CATDataset(Dataset, data.dataset.Dataset):
     Train dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config):
+    def __init__(self, data, concept_map, metadata, config,nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        Dataset.__init__(self, data, concept_map, metadata, config)
+        Dataset.__init__(self, data, concept_map, metadata, config,nb_modalities)
 
         self.rng = np.random.default_rng(self.query_seed)
 
@@ -210,14 +210,14 @@ class EvalDataset(CATDataset):
     valid and test dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config):
+    def __init__(self, data, concept_map, metadata, config,nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        super().__init__(data, concept_map, metadata, config)
+        super().__init__(data, concept_map, metadata, config, nb_modalities)
         self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
         self._precomputed_batch = {}
 
