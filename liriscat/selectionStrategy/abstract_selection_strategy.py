@@ -159,6 +159,8 @@ class AbstractSelectionStrategy(ABC):
         pred_list = []
         label_list = []
 
+        logging.debug("-- evaluate valid --")
+
         for _ in valid_loader:
 
             # Prepare the meta set
@@ -173,7 +175,7 @@ class AbstractSelectionStrategy(ABC):
 
             with torch.enable_grad():
                 self.CDM.model.train()
-                self.CDM.update_users(valid_query_env.feed_IMPACT_sub())
+                self.CDM.update_users(valid_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
                 self.CDM.model.eval()
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
@@ -199,7 +201,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['CDM']:
             case 'impact':
                 self.CDM.model.R = test_dataset.log_tensor
-                self.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
+                self.CDM.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
                 self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
                 self.CDM.initialize_test_users(test_dataset)
 
@@ -300,6 +302,7 @@ class AbstractSelectionStrategy(ABC):
         self.scaler = torch.amp.GradScaler(self.device)
 
         self.model.train()
+        self.CDM.model.train()
 
         self._train_method(train_dataset, valid_dataset)
 
@@ -333,17 +336,22 @@ class AbstractSelectionStrategy(ABC):
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
+            logging.debug(f'------- Epoch : {ep}')
+
             train_dataset.set_query_seed(ep) # changes the meta and query set for each epoch
 
-            for _ in train_loader: # UserCollate directly load the data into the query environment
-
+            for u_batch,_ in enumerate(train_loader): # UserCollate directly load the data into the query environment
+                
+                logging.debug(f'----- User batch : {u_batch}')
                 m_user_ids, m_question_ids, m_labels, m_category_ids = train_query_env.generate_IMPACT_meta()
 
-                for t in range(self.config['n_query']):
+                for i_query in range(self.config['n_query']):
 
-                    actions = self.select_action(train_query_env.get_query_options(t))
+                    logging.debug(f'--- Query nb : {i_query}')
 
-                    train_query_env.update(actions, t)
+                    actions = self.select_action(train_query_env.get_query_options(i_query))
+
+                    train_query_env.update(actions, i_query)
 
                     self.CDM.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
