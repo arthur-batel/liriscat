@@ -32,31 +32,7 @@ def remove_duplicates(data: pd.DataFrame, key_attrs: List[str], agg_attrs: List[
 
     :param data: Dataset as a pandas.DataFrame
     :type data: pd.DataFrame
-def split_data_horizontally(df):
-    train = []
-    valid = []
-
-    for i_group, group in df.groupby('student_id'):
-        group_idxs = group.index.values
-
-        train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
-
-        train.extend(group.loc[train_item_idx].values.tolist())
-        valid.extend(group.loc[valid_item_idx].values.tolist())
-
-    return train, validdef split_data_horizontally(df):
-        train = []
-        valid = []
-
-        for i_group, group in df.groupby('student_id'):
-            group_idxs = group.index.values
-
-            train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
-
-            train.extend(group.loc[train_item_idx].values.tolist())
-            valid.extend(group.loc[valid_item_idx].values.tolist())
-
-        return train, valid    :param key_attrs: Attributes whose combination must be unique
+    :param key_attrs: Attributes whose combination must be unique
     :type key_attrs: List[str]
     :param agg_attrs: Attributes to aggregate in a set for every unique key
     :type agg_attrs: List[str]
@@ -71,117 +47,6 @@ def split_data_horizontally(df):
     d.update({col: 'first' for col in data.columns if col not in special_attributes})
     data = data.groupby(key_attrs).agg(d).reset_index()
     return data
-
-def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
-    """
-    Split data (list of triplets) into train, validation, and test sets.
-
-    :param quadruplet: List of triplets (sid, qid, score)
-    :type quadruplet: list
-    :param test_prop: Fraction of the test set
-    :type test_prop: float
-    :param valid_prop: Fraction of the validation set
-    :type valid_prop: float
-    :param least_test_length: Minimum number of items a student must have to be included in the test set.
-    :type least_test_length: int or None
-    :return: Train, validation, and test sets.
-    :rtype: list, list, list
-    """
-
-    kf = KFold(n_splits=folds_nb, shuffle=True)
-    df = pd.DataFrame(quadruplet)
-    df.columns = ["student_id","item_id","answer","dimension_id"]
-
-    train = [[]  for _ in range(folds_nb)]
-    valid = [[]  for _ in range(folds_nb)]
-    test = [[]  for _ in range(folds_nb)]
-
-    for i_group, group in df.groupby('student_id'):
-        group_idxs = np.array(group.index)
-
-        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)): #method of sci_ski_learn
-
-            train_valid_item_idx = group_idxs[train_valid_fold_idx]
-            test_item_idx = group_idxs[test_fold_idx]
-
-            train_item_idx, valid_item_idx = train_test_split(train_valid_item_idx, test_size=float(valid_prop) / (
-                        1.0 - float(test_prop)), shuffle=True)
-
-            train[i_fold] += df.loc[train_item_idx, :].values.tolist()
-            valid[i_fold] += df.loc[valid_item_idx, :].values.tolist()
-            test[i_fold] += df.loc[test_item_idx, :].values.tolist()
-
-    return train, valid, test
-
-def split_data_vertically_new(quadruplet, valid_prop):
-    """
-    Split data (list of double) into train and validation sets.
-
-    :param quadruplet: List of triplets (sid, qid, score)
-    :type quadruplet: list
-    :param valid_prop: Fraction of the validation set
-    :type valid_prop: float
-    :param least_test_length: Minimum number of items a student must have to be included in the test set.
-    :type least_test_length: int or None
-    :return: Train and validation sets.
-    :rtype: list, list, list
-    """
-    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
-    df.columns = ["student_id", "item_id", "answer", "dimension_id"]
-    df.head()
-    df_grouped = df.groupby(['student_id', 'item_id']).agg(
-        answers=('answer', list),
-        dimensions=('dimension_id', list)
-    ).reset_index()
-
-    train_list = []
-    valid_list = []
-
-    # method of sci_ski_learn
-
-    for i_group, group in df_grouped.groupby('student_id'):
-        group_idxs = np.array(group.index)
-        train_part, valid_part = train_test_split(df_grouped, test_size=valid_prop, shuffle=True)
-        train_list.append(train_part)
-        valid_list.append(valid_part)
-
-    train = pd.concat(train_list, ignore_index=True)
-    valid = pd.concat(valid_list, ignore_index=True)
-
-    train_expanded = train.explode(['answers', 'dimensions'])
-    valid_expanded = valid.explode(['answers', 'dimensions'])
-
-    return train_expanded, valid_expanded
-
-def quadruplet_format(data: pd.DataFrame):
-    """
-    Convert DataFrame into a list of quadruplets with correct data types.
-
-    :param data: Dataset containing columns 'user_id', 'item_id', 'correct', and 'dimension_id'
-    :type data: pd.DataFrame
-    :return: List of quadruplets [sid, qid, score, dim]
-    :rtype: list
-    """
-    # Ensure data types
-    data['user_id'] = data['user_id'].astype(int)
-    data['item_id'] = data['item_id'].astype(int)
-    data['dimension_id'] = data['dimension_id'].astype(int)
-    # 'correct' column might be float or int, depending on your data
-
-    # Extract columns as lists
-    user_ids = data['user_id'].tolist()
-    item_ids = data['item_id'].tolist()
-    corrects = data['correct'].tolist()
-    dimension_ids = data['dimension_id'].tolist()
-
-    # Combine columns into a list of quadruplets
-    quadruplets = list(zip(user_ids, item_ids, corrects, dimension_ids))
-
-    # Convert each quadruplet to a list
-    quadruplets = [list(quad) for quad in quadruplets]
-
-    return quadruplets
-
 
 def densify(data: pd.DataFrame, grp_by_attr: str, count_attr: str, thd: int):
     """
@@ -362,6 +227,210 @@ def rescaling_dict(metadata: pd.DataFrame,q2n):
             print(f'{e} were removed from dataset')
     return [response_range_dict, min_response_dict, max_response_dict]
 
+def split_data(triplets, stu_data, test_prop, valid_prop, least_test_length) :
+    """
+    Split data (list of triplets) into train, validation, and test sets.
+
+    :param triplets: List of triplets (sid, qid, score)
+    :type triplets: list
+    :param stu_data: Student data
+    :type stu_data:
+    :param test_prop: Fraction of the test set
+    :type test_prop: float
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :param least_test_length: Minimum number of items a student must have to be included in the test set.
+    :type least_test_length: int or None
+    :return: Train, validation, and test sets.
+    :rtype: list, list, list
+    """
+
+    print("WARNING !!!! : least_test_length not used !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    n_students = len(stu_data)
+
+    students = list(range(n_students))
+    random.shuffle(students)
+    if least_test_length is not None:
+        student_lens = defaultdict(int)
+        for t in triplets:
+            student_lens[t[0]] += 1
+        students = [student for student in students
+                    if student_lens[student] >= least_test_length]
+    n_students = len(students)    
+    if isinstance(test_prop, float):
+        test_prop = int(n_students * test_prop)
+
+    if isinstance(valid_prop, float):
+        valid_prop = int(n_students * valid_prop)
+
+    train_size = n_students - test_prop
+    assert (train_size > 0 and test_prop > 0)
+
+    test_students = set(students[:test_prop])
+    valid_students = set(students[test_prop:test_prop + valid_prop])
+    train_students = set(students[test_prop + valid_prop:])
+
+    train_data = [record for record in triplets if record[0] in train_students]
+    valid_data = [record for record in triplets if record[0] in valid_students]
+    test_data = [record for record in triplets if record[0] in test_students]
+
+    return train_data, valid_data, test_data
+
+def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
+    """
+    Split data (list of triplets) into train, validation, and test sets.
+
+    :param quadruplet: List of triplets (sid, qid, score)
+    :type quadruplet: list
+    :param test_prop: Fraction of the test set
+    :type test_prop: float
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :param least_test_length: Minimum number of items a student must have to be included in the test set.
+    :type least_test_length: int or None
+    :return: Train, validation, and test sets.
+    :rtype: list, list, list
+    """
+
+    kf = KFold(n_splits=folds_nb, shuffle=True)
+    df = pd.DataFrame(quadruplet)
+    df.columns = ["student_id","item_id","answer","dimension_id"]
+
+    train = [[]  for _ in range(folds_nb)]
+    valid = [[]  for _ in range(folds_nb)]
+    test = [[]  for _ in range(folds_nb)]
+
+    for i_group, group in df.groupby('student_id'):
+        group_idxs = np.array(group.index)
+
+        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)):
+
+            train_valid_item_idx = group_idxs[train_valid_fold_idx]
+            test_item_idx = group_idxs[test_fold_idx]
+
+            train_item_idx, valid_item_idx = train_test_split(train_valid_item_idx, test_size=float(valid_prop) / (
+                        1.0 - float(test_prop)), shuffle=True)
+
+            train[i_fold] += df.loc[train_item_idx, :].values.tolist()
+            valid[i_fold] += df.loc[valid_item_idx, :].values.tolist()
+            test[i_fold] += df.loc[test_item_idx, :].values.tolist()
+
+    return train, valid, test
+
+def split_data_vertically_new(quadruplet, valid_prop):
+    """
+    Split data (list of double) into train and validation sets.
+
+    :param quadruplet: List of triplets (sid, qid, score)
+    :type quadruplet: list
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :param least_test_length: Minimum number of items a student must have to be included in the test set.
+    :type least_test_length: int or None
+    :return: Train and validation sets.
+    :rtype: list, list, list
+    """
+    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
+    df.columns = ["student_id", "item_id", "answer", "dimension_id"]
+    df.head()
+    df_grouped = df.groupby(['student_id', 'item_id']).agg(
+        answers=('answer', list),
+        dimensions=('dimension_id', list)
+    ).reset_index()
+
+    train_list = []
+    valid_list = []
+
+    # method of sci_ski_learn
+
+    for i_group, group in df_grouped.groupby('student_id'):
+        group_idxs = np.array(group.index)
+        train_part, valid_part = train_test_split(df_grouped, test_size=valid_prop, shuffle=True)
+        train_list.append(train_part)
+        valid_list.append(valid_part)
+
+    train = pd.concat(train_list, ignore_index=True)
+    valid = pd.concat(valid_list, ignore_index=True)
+
+    train_expanded = train.explode(['answers', 'dimensions'])
+    valid_expanded = valid.explode(['answers', 'dimensions'])
+
+    return train_expanded, valid_expanded
+
+def split_small_data_vertically(quadruplet, test_prop, valid_prop):
+    """
+    Split data (list of quadruplets) into train, validation, and test sets.
+
+    :param quadruplet: List of quadruplets (student_id, item_id, answer, dimension_id)
+    :type quadruplet: list
+    :param test_prop: Fraction of the test set
+    :type test_prop: float
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :return: Train, validation, and test sets.
+    :rtype: list, list, list
+    """
+
+    # Create DataFrame
+    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
+
+    # Initialize lists to collect indices
+    train_indices = []
+    valid_indices = []
+    test_indices = []
+
+    # Group by 'student_id' and split data
+    for _, group in df.groupby('student_id'):
+        group_indices = group.index.values
+
+        # Split into train+valid and test
+        train_valid_idx, test_idx = train_test_split(
+            group_indices,
+            test_size=test_prop,
+            shuffle=True
+        )
+
+        # Further split train_valid into train and valid
+        valid_size = valid_prop / (1.0 - test_prop)
+        train_idx, valid_idx = train_test_split(
+            train_valid_idx,
+            test_size=valid_size,
+            shuffle=True
+        )
+
+        # Collect indices
+        train_indices.extend(train_idx)
+        valid_indices.extend(valid_idx)
+        test_indices.extend(test_idx)
+
+    # Extract data using the collected indices
+    train_df = df.loc[train_indices]
+    valid_df = df.loc[valid_indices]
+    test_df = df.loc[test_indices]
+
+    # Optionally reset index if needed
+    # train_df = train_df.reset_index(drop=True)
+    # valid_df = valid_df.reset_index(drop=True)
+    # test_df = test_df.reset_index(drop=True)
+
+    # Convert DataFrames to lists (if required)
+    train = train_df.values.tolist()
+    valid = valid_df.values.tolist()
+    test = test_df.values.tolist()
+
+    return train, valid, test
+
+
+def save_to_csv(data, path):
+    """
+    Save list of triplets (sid, qid, score) to a CSV file.
+    :param data: List of triplets (sid, qid, score)
+    :type data: pd.DataFrame
+    :param path: Path to CSV file
+    :type path: str
+    """
+    pd.DataFrame.from_records(sorted(data), columns=['student_id', 'item_id', 'correct', 'dimension_id']).to_csv(path, index=False)
+
 def get_modalities_nb(data, metadata) :
 
     tensor_data = torch.zeros((metadata['num_user_id'], metadata['num_item_id']), dtype=torch.double)
@@ -382,63 +451,6 @@ def get_modalities_nb(data, metadata) :
             torch.abs(unique_logs.unsqueeze(0) - unique_logs.unsqueeze(1)) + torch.eye(unique_logs.shape[0]))
         nb_modalities[item_i] = (torch.round(1 / delta_min) + 1).long()
     return nb_modalities
-
-def split_users(df, folds_nb=5, seed=0) :
-    """
-    k-fold cross validationsplit of users
-
-    """
-
-    users_idx = df['user_id'].unique()
-    N = len(users_idx) // 5
-    random.Random(seed).shuffle(users_idx)
-
-    train = [[] for _ in range(folds_nb)]
-    valid = [[] for _ in range(folds_nb)]
-    test = [[] for _ in range(folds_nb)]
-
-    for i_fold in range(folds_nb):
-        test_fold, valid_fold = (i_fold - 1) % 5, i_fold
-
-        test_users = users_idx[test_fold * N: (test_fold + 1) * N]
-        valid_users = users_idx[valid_fold * N: (valid_fold + 1) * N]
-        train_indices = [idx for idx in range(len(users_idx))]
-        train_indices = [idx for idx in train_indices if idx //
-                         N != test_fold and idx // N != valid_fold]
-        train_users = [int(users_idx[idx]) for idx in train_indices]
-
-        train[i_fold] = df[df['user_id'].isin(users_idx[train_users])]
-        valid[i_fold] = df[df['user_id'].isin(users_idx[valid_users])]
-        test[i_fold] = df[df['user_id'].isin(users_idx[test_users])]
-
-
-
-    return train, valid, test
-
-def split_data_horizontally(df):
-    train = []
-    valid = []
-
-    for i_group, group in df.groupby('user_id'):
-        group_idxs = group.index.values
-
-        train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
-
-        train.extend(group.loc[train_item_idx].values.tolist())
-        valid.extend(group.loc[valid_item_idx].values.tolist())
-
-    return train, valid
-
-def save_df_to_csv(data, path):
-    """
-    Save list of triplets (sid, qid, score) to a CSV file.
-    :param data: List of triplets (sid, qid, score)
-    :type data: pd.DataFrame
-    :param path: Path to CSV file
-    :type path: str
-    """
-    data.to_csv(path, index=False)
-
 
 def get_metadata(data: pd.DataFrame, keys: List[str]) -> dict:
     m = {}
