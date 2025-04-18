@@ -18,42 +18,80 @@ from datetime import datetime
 from sklearn.metrics import roc_auc_score
 
 
-def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None):
-    root = logging.getLogger()
-    if verbose:
-        root.setLevel(logging.INFO)
-    else:
-        root.setLevel(logging.ERROR)
+def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
-    # Stream handler for console output
-    stream_handler = logging.StreamHandler(sys.stdout)
-    if verbose:
-        stream_handler.setLevel(logging.INFO)
-    else:
-        stream_handler.setLevel(logging.ERROR)
-    formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s")
-    formatter.default_time_format = "%M:%S"
-    formatter.default_msec_format = ""
-    stream_handler.setFormatter(formatter)
-
-    # Remove existing handlers
-    for handler in root.handlers[:]:
-        root.removeHandler(handler)
-
-    if log_name is not None:
-        now = datetime.now()
-        time_str = now.strftime("_%d:%m:%y_%S:%M")
-        file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
-
+    if os == 'Windows':
+        root = logging.getLogger()
         if verbose:
-            file_handler.setLevel(logging.INFO)
+            root.setLevel(logging.INFO)
         else:
-            file_handler.setLevel(logging.ERROR)
-        file_handler.setFormatter(formatter)
-        root.addHandler(file_handler)
+            root.setLevel(logging.ERROR)
 
-    # Add new handlers
-    root.addHandler(stream_handler)
+        # Stream handler for console output
+        stream_handler = logging.StreamHandler(sys.stdout)
+        if verbose:
+            stream_handler.setLevel(logging.INFO)
+        else:
+            stream_handler.setLevel(logging.ERROR)
+        formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s")
+        formatter.default_time_format = "%M-%S"
+        formatter.default_msec_format = ""
+        stream_handler.setFormatter(formatter)
+
+        # Remove existing handlers
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+
+        if log_name is not None:
+            now = datetime.now()
+            time_str = now.strftime("_%d-%m-%y_%S-%M")
+            file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
+
+            if verbose:
+                file_handler.setLevel(logging.INFO)
+            else:
+                file_handler.setLevel(logging.ERROR)
+            file_handler.setFormatter(formatter)
+            root.addHandler(file_handler)
+
+        # Add new handlers
+        root.addHandler(stream_handler)
+    elif os == 'Linux':
+        root = logging.getLogger()
+        if verbose:
+            root.setLevel(logging.INFO)
+        else:
+            root.setLevel(logging.ERROR)
+
+        # Stream handler for console output
+        stream_handler = logging.StreamHandler(sys.stdout)
+        if verbose:
+            stream_handler.setLevel(logging.INFO)
+        else:
+            stream_handler.setLevel(logging.ERROR)
+        formatter = logging.Formatter("[%(levelname)s %(asctime)s] %(message)s")
+        formatter.default_time_format = "%M:%S"
+        formatter.default_msec_format = ""
+        stream_handler.setFormatter(formatter)
+
+        # Remove existing handlers
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+
+        if log_name is not None:
+            now = datetime.now()
+            time_str = now.strftime("_%d:%m:%y_%S:%M")
+            file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
+
+            if verbose:
+                file_handler.setLevel(logging.INFO)
+            else:
+                file_handler.setLevel(logging.ERROR)
+            file_handler.setFormatter(formatter)
+            root.addHandler(file_handler)
+
+        # Add new handlers
+        root.addHandler(stream_handler)
 
 
 def set_seed(seed):
