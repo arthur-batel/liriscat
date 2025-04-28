@@ -99,7 +99,7 @@ def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
     for i_group, group in df.groupby('student_id'):
         group_idxs = np.array(group.index)
 
-        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)):
+        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)): #method of sci_ski_learn
 
             train_valid_item_idx = group_idxs[train_valid_fold_idx]
             test_item_idx = group_idxs[test_fold_idx]
@@ -112,6 +112,46 @@ def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
             test[i_fold] += df.loc[test_item_idx, :].values.tolist()
 
     return train, valid, test
+
+def split_data_vertically_new(quadruplet, valid_prop):
+    """
+    Split data (list of double) into train and validation sets.
+
+    :param quadruplet: List of triplets (sid, qid, score)
+    :type quadruplet: list
+    :param valid_prop: Fraction of the validation set
+    :type valid_prop: float
+    :param least_test_length: Minimum number of items a student must have to be included in the test set.
+    :type least_test_length: int or None
+    :return: Train and validation sets.
+    :rtype: list, list, list
+    """
+    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
+    df.columns = ["student_id", "item_id", "answer", "dimension_id"]
+    df.head()
+    df_grouped = df.groupby(['student_id', 'item_id']).agg(
+        answers=('answer', list),
+        dimensions=('dimension_id', list)
+    ).reset_index()
+
+    train_list = []
+    valid_list = []
+
+    # method of sci_ski_learn
+
+    for i_group, group in df_grouped.groupby('student_id'):
+        group_idxs = np.array(group.index)
+        train_part, valid_part = train_test_split(df_grouped, test_size=valid_prop, shuffle=True)
+        train_list.append(train_part)
+        valid_list.append(valid_part)
+
+    train = pd.concat(train_list, ignore_index=True)
+    valid = pd.concat(valid_list, ignore_index=True)
+
+    train_expanded = train.explode(['answers', 'dimensions'])
+    valid_expanded = valid.explode(['answers', 'dimensions'])
+
+    return train_expanded, valid_expanded
 
 def quadruplet_format(data: pd.DataFrame):
     """
