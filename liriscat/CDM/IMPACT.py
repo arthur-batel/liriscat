@@ -52,7 +52,13 @@ class CATIMPACT(IMPACT) :
 
         self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
 
+        self.model.prior_cov_inv  = torch.inverse(torch.cov(self.model.users_emb(train_valid_users).T))
+        self.model.prior_mean = ave.unsqueeze(0)
+        self.model.get_regularizer = functools.partial(self.get_regularizer_with_pior)
 
+
+    def get_regularizer_with_pior(self):
+        return (self.users_emb.weight - self.prior_mean) @ self.prior_cov_inv @ (self.users_emb.weight - self.prior_mean).T
 
     def get_params(self):
         return self.model.state_dict()
