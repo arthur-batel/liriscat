@@ -162,14 +162,14 @@ class CATDataset(Dataset, data.dataset.Dataset):
     Train dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config,nb_modalities):
+    def __init__(self, data, concept_map, metadata, config, nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
             concept_map: dict, concept map {qid: cid}
             metadata : dict of keys {"num_user_id", "num_item_id", "num_dimension_id"}, containing the total number of users, items and concepts
         """
-        Dataset.__init__(self, data, concept_map, metadata, config,nb_modalities)
+        Dataset.__init__(self, data, concept_map, metadata, config, nb_modalities)
 
         self.rng = np.random.default_rng(self.query_seed)
 
