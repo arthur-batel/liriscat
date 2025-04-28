@@ -13,3 +13,4 @@ build/
 dist/
 y/
 liriscat.egg-info/
+*.ipynb_checkpoints
