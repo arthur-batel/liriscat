@@ -18,6 +18,7 @@ from liriscat import utils
 
 import warnings
 import torch
+import logging
 
 warnings.filterwarnings(
     "ignore",
@@ -35,14 +36,9 @@ class CATIMPACT(IMPACT) :
     def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
 
-        self.user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
-                                                      lr=self.config['inner_user_lr'])  # todo : Decide How to use a scheduler
+
         self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'])
 
-        self.params_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.user_params_optimizer, patience=2,
-                                                                           factor=0.5)
-
-        self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
         self.params_scaler = torch.amp.GradScaler(self.config['device'])
 
     def initialize_test_users(self, test_data):
@@ -62,7 +58,10 @@ class CATIMPACT(IMPACT) :
         return self.model.state_dict()
 
     def update_params(self,user_ids, question_ids, labels, categories) :
-        for _ in range(self.config['num_inner_epochs']) :
+        logging.debug("- Update params : ")
+        
+        for t in range(self.config['num_inner_epochs']) :
+
             self.params_optimizer.zero_grad()
 
             with torch.amp.autocast('cuda'):
@@ -73,6 +72,7 @@ class CATIMPACT(IMPACT) :
             self.params_scaler.update()
 
     def update_users(self,query_data, meta_data, meta_labels) :
+        logging.debug("- Update users ")
         m_user_ids, m_question_ids, m_category_ids = meta_data
 
         data = dataset.SubmittedDataset(query_data)
@@ -82,35 +82,75 @@ class CATIMPACT(IMPACT) :
                                                       lr=self.config[
                                                           'inner_user_lr'])  # todo : Decide How to use a scheduler
 
-        self.user_params_scaler = torch.amp.GradScaler(self.config['device'])
-
+        user_params_scaler = torch.amp.GradScaler(self.config['device'])
 
         n_batches = len(dataloader)
 
-        for _ in range(self.config['num_inner_users_epochs']) :
-            sum_loss = 0
+        for t in range(self.config['num_inner_users_epochs']) :
+
+            sum_loss_0 = 0
+            sum_loss_1 = 0
+            sum_acc_0 = 0
+            sum_acc_1 = 0
+            sum_meta_acc = 0
+            sum_meta_loss = 0
+
             for batch in dataloader:
                 user_ids = batch["user_ids"]
                 question_ids = batch["question_ids"]
                 labels = batch["labels"]
                 category_ids = batch["category_ids"]
 
-                preds = self.model(m_user_ids, m_question_ids, m_category_ids)
+                self.model.eval()
+                
+                preds = self.model(user_ids, question_ids, category_ids)
+                sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
 
-                print("meta mi_acc = ", utils.micro_ave_accuracy(meta_labels, preds))
+                meta_preds = self.model(m_user_ids, m_question_ids, m_category_ids)
+
+                self.model.train()
 
                 user_params_optimizer.zero_grad()
 
                 with torch.amp.autocast('cuda'):
-                    loss = self._compute_loss(m_user_ids, m_question_ids, m_category_ids, meta_labels)
-                    sum_loss += loss.item()
+                    loss = self._compute_loss(user_ids, question_ids, labels, category_ids)
+                    sum_loss_0 += loss.item()
+
 
                 # loss.backward()
                 # user_params_optimizer.step()
-                self.user_params_scaler.scale(loss).backward()
-                self.user_params_scaler.step(self.user_params_optimizer)
-                self.user_params_scaler.update()
-            print("Loss: ", sum_loss/n_batches)
+                user_params_scaler.scale(loss).backward()
+                user_params_scaler.step(user_params_optimizer)
+                user_params_scaler.update()
+
+                with torch.amp.autocast('cuda'):
+                    loss2 = self._compute_loss(user_ids, question_ids, labels, category_ids)
+                    sum_loss_1 += loss2.item()
+
+                
+
+                self.model.eval()
+
+                preds = self.model(user_ids, question_ids, category_ids)
+
+                self.model.train()
+                sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
+                sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
+                
+            with torch.amp.autocast('cuda'):
+                meta_loss = self._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
+                sum_meta_loss += meta_loss.item()
+
+                
+            logging.debug(
+                f'inner epoch {t} - query loss_0 : {sum_loss_0/n_batches:.5f} '
+                f'- query loss_1 : {sum_loss_1/n_batches:.5f} '
+                f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
+                f'- query acc 1 : {sum_acc_1/n_batches:.5f} '
+                f'- meta acc 0 : {sum_meta_acc/n_batches:.5f}'
+                f'- meta loss 1 : {sum_meta_loss:.5f}'
+            )
+
 
     def get_KLI(self, query_data) :
 
