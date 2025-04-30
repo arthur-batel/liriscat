@@ -18,18 +18,24 @@ from datetime import datetime
 from sklearn.metrics import roc_auc_score
 
 
-def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
+def setuplogger(verbose: bool = True, debug: bool=False, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
     if os == 'Windows':
         root = logging.getLogger()
-        if verbose:
+        
+        if debug : 
+            root.setLevel(logging.DEBUG)
+        elif verbose:
             root.setLevel(logging.INFO)
         else:
             root.setLevel(logging.ERROR)
 
         # Stream handler for console output
         stream_handler = logging.StreamHandler(sys.stdout)
-        if verbose:
+        
+        if debug : 
+            stream_handler.setLevel(logging.DEBUG)
+        elif verbose:
             stream_handler.setLevel(logging.INFO)
         else:
             stream_handler.setLevel(logging.ERROR)
@@ -47,7 +53,9 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
             time_str = now.strftime("_%d-%m-%y_%S-%M")
             file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
 
-            if verbose:
+            if debug : 
+                file_handler.setLevel(logging.DEBUG)
+            elif verbose:
                 file_handler.setLevel(logging.INFO)
             else:
                 file_handler.setLevel(logging.ERROR)
@@ -58,14 +66,18 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
         root.addHandler(stream_handler)
     elif os == 'Linux':
         root = logging.getLogger()
-        if verbose:
+        if debug : 
+            root.setLevel(logging.DEBUG)
+        elif verbose:
             root.setLevel(logging.INFO)
         else:
             root.setLevel(logging.ERROR)
 
         # Stream handler for console output
         stream_handler = logging.StreamHandler(sys.stdout)
-        if verbose:
+        if debug : 
+            stream_handler.setLevel(logging.DEBUG)
+        elif verbose:
             stream_handler.setLevel(logging.INFO)
         else:
             stream_handler.setLevel(logging.ERROR)
@@ -83,7 +95,9 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
             time_str = now.strftime("_%d:%m:%y_%S:%M")
             file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
 
-            if verbose:
+            if debug : 
+                file_handler.setLevel(logging.DEBUG)
+            elif verbose:
                 file_handler.setLevel(logging.INFO)
             else:
                 file_handler.setLevel(logging.ERROR)
