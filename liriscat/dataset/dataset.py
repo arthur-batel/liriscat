@@ -415,8 +415,12 @@ class QueryEnv:
     def update(self, actions: Tensor, t: int) -> None:
         """
         Move selected questions from query set to submitted set
+
+        Args:
+            actions: list, [(sid, qid, score)]
         """
-        actions += t
+        assert (actions < self.query_len).all(), \
+            f'The selection Strategy has selected None query questions.'
 
         with torch.no_grad():
             idx = self._current_charged_log_nb
