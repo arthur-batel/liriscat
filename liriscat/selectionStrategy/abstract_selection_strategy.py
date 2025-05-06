@@ -209,7 +209,7 @@ class AbstractSelectionStrategy(ABC):
 
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
-                                      shuffle=False, pin_memory=False)
+                                      shuffle=False, pin_memory=False, num_workers=0)
 
         pred_list = {t : [] for t in range(self.config['n_query'])}
         label_list = {t : [] for t in range(self.config['n_query'])}
