@@ -93,7 +93,7 @@ class CATIMPACT(IMPACT) :
         m_user_ids, m_question_ids, m_category_ids = meta_data
 
         data = dataset.SubmittedDataset(query_data)
-        dataloader = DataLoader(data, batch_size=2048, shuffle=True)
+        dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
 
         user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
                                                       lr=self.config[

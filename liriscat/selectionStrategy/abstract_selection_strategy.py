@@ -327,11 +327,11 @@ class AbstractSelectionStrategy(ABC):
         valid_query_env = QueryEnv(valid_dataset, self.device, self.config['valid_batch_size'])
 
         train_loader = DataLoader(dataset=train_dataset, collate_fn=UserCollate(train_query_env), batch_size=self.config['batch_size'],
-                                  shuffle=True, pin_memory=True)
+                                  shuffle=True, pin_memory=True, num_workers=0)
 
         valid_loader = DataLoader(dataset=valid_dataset, collate_fn=UserCollate(valid_query_env),
                                   batch_size=self.config['valid_batch_size'],
-                                  shuffle=False, pin_memory=True)
+                                  shuffle=False, pin_memory=True, num_workers=0)
 
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):

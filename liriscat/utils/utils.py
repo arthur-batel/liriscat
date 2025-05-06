@@ -419,7 +419,7 @@ def compute_pc_er(emb, test_data):
     U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
                                                                                  non_blocking=True)
 
-    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False)
+    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False, num_workers=0)
     for data_batch in data_loader:
         user_ids = data_batch[:, 0].long()
         item_ids = data_batch[:, 1].long()
