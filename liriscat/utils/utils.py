@@ -16,7 +16,7 @@ import sys
 from datetime import datetime
 
 from sklearn.metrics import roc_auc_score
-
+from IMPACT import dataset
 
 def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
@@ -778,3 +778,43 @@ def micro_ave_auc(y_true, y_pred):
     y_pred = y_pred.cpu().int().numpy()
     roc_auc = roc_auc_score(y_true.ravel(), y_pred.ravel(), average='micro')
     return torch.tensor(roc_auc)
+
+
+def prepare_dataset(config: dict, i_fold:int=0) :
+    """
+    Prepare the dataset for training, validation, and testing.
+
+    Args:
+        config (dict): Configuration dictionary containing dataset name and other parameters.
+        i_fold (int): Fold number for cross-validation. Default is 0.
+
+    Returns:
+        tuple: A tuple containing:
+            - concept_map (dict): A dictionary mapping question IDs to lists of category IDs.
+            - train_data (LoaderDataset): Training dataset.
+            - valid_data (LoaderDataset): Validation dataset.
+            - test_data (LoaderDataset): Testing dataset.
+    """
+    ## Concept map format : {question_id : [category_id1, category_id2, ...]}
+    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
+    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
+    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl', weights_only=True)
+
+
+    ## Metadata map format : {"num_user_id": ..., "num_item_id": ..., "num_dimension_id": ...}
+    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
+
+    ## Quadruplets format : (user_id, question_id, response, category_id)
+    train = pd.read_csv(
+        f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_fold}.csv',
+        encoding='utf-8').to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
+                                                                 "dimension_id": int})
+    valid = pd.read_csv(
+        f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_fold}.csv',
+        encoding='utf-8').to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
+                                                                 "dimension_id": int})
+
+    train_data = dataset.LoaderDataset(train, concept_map, metadata, nb_modalities)
+    valid_data = dataset.LoaderDataset(valid, concept_map, metadata, nb_modalities)
+
+    return train_data, valid_data

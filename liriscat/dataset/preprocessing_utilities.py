@@ -9,6 +9,43 @@ import torch
 from sklearn.model_selection import KFold, train_test_split
 from tqdm import tqdm
 
+import sys
+sys.path.append("../../")
+
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+from IMPACT import utils
+utils.set_seed(0)
+from IMPACT import dataset
+from IMPACT import model
+import optuna
+import logging
+import gc
+import json
+from importlib import reload
+
+from ipyparallel import Client
+import dill
+
+cat_absolute_path = os.path.abspath('../../')
+
+rc = Client()
+rc[:].use_dill()
+lview = rc.load_balanced_view()
+
+
+rc[:].execute("import sys; sys.path.append('"+cat_absolute_path+"')")
+logging.info("sys.path.append("+cat_absolute_path+")")
+with rc[:].sync_imports():
+    import json
+    from IMPACT import utils, model, dataset
+    import logging
+    import gc
+    import torch
+
+from liriscat import utils as utils_liriscat
+
 def stat_unique(data: pd.DataFrame, key):
     """
     Calculate statistics on unique values in a DataFrame column or combination of columns.
@@ -72,48 +109,7 @@ def split_data_horizontally(df):
     data = data.groupby(key_attrs).agg(d).reset_index()
     return data
 
-def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
-    """
-    Split data (list of triplets) into train, validation, and test sets.
-
-    :param quadruplet: List of triplets (sid, qid, score)
-    :type quadruplet: list
-    :param test_prop: Fraction of the test set
-    :type test_prop: float
-    :param valid_prop: Fraction of the validation set
-    :type valid_prop: float
-    :param least_test_length: Minimum number of items a student must have to be included in the test set.
-    :type least_test_length: int or None
-    :return: Train, validation, and test sets.
-    :rtype: list, list, list
-    """
-
-    kf = KFold(n_splits=folds_nb, shuffle=True)
-    df = pd.DataFrame(quadruplet)
-    df.columns = ["student_id","item_id","answer","dimension_id"]
-
-    train = [[]  for _ in range(folds_nb)]
-    valid = [[]  for _ in range(folds_nb)]
-    test = [[]  for _ in range(folds_nb)]
-
-    for i_group, group in df.groupby('student_id'):
-        group_idxs = np.array(group.index)
-
-        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)): #method of sci_ski_learn
-
-            train_valid_item_idx = group_idxs[train_valid_fold_idx]
-            test_item_idx = group_idxs[test_fold_idx]
-
-            train_item_idx, valid_item_idx = train_test_split(train_valid_item_idx, test_size=float(valid_prop) / (
-                        1.0 - float(test_prop)), shuffle=True)
-
-            train[i_fold] += df.loc[train_item_idx, :].values.tolist()
-            valid[i_fold] += df.loc[valid_item_idx, :].values.tolist()
-            test[i_fold] += df.loc[test_item_idx, :].values.tolist()
-
-    return train, valid, test
-
-def split_data_vertically_new(quadruplet, valid_prop):
+def split_data_vertically_unique_fold(quadruplet, valid_prop):
     """
     Split data (list of double) into train and validation sets.
 
@@ -126,22 +122,18 @@ def split_data_vertically_new(quadruplet, valid_prop):
     :return: Train and validation sets.
     :rtype: list, list, list
     """
-    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
-    df.columns = ["student_id", "item_id", "answer", "dimension_id"]
-    df.head()
+    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "correct", "dimension_id"])
+    df.columns = ["student_id", "item_id", "correct", "dimension_id"]
     df_grouped = df.groupby(['student_id', 'item_id']).agg(
-        answers=('answer', list),
+        answers=('correct', list),
         dimensions=('dimension_id', list)
     ).reset_index()
 
     train_list = []
     valid_list = []
 
-    # method of sci_ski_learn
-
     for i_group, group in df_grouped.groupby('student_id'):
-        group_idxs = np.array(group.index)
-        train_part, valid_part = train_test_split(df_grouped, test_size=valid_prop, shuffle=True)
+        train_part, valid_part = train_test_split(group, test_size=valid_prop, shuffle=True)
         train_list.append(train_part)
         valid_list.append(valid_part)
 
@@ -152,6 +144,16 @@ def split_data_vertically_new(quadruplet, valid_prop):
     valid_expanded = valid.explode(['answers', 'dimensions'])
 
     return train_expanded, valid_expanded
+
+def are_student_sets_equal(train, valid):
+    i_train = train['item_id'].unique()
+    i_valid= valid['item_id'].unique()
+    return len(set(i_train) - (set(i_valid)))==0
+
+def are_pair_student_equal(train, valid):
+    r_train = train.apply(lambda x: str(x['student_id']) + '_' + str(x['item_id']), axis=1).unique()
+    r_valid = valid.apply(lambda x: str(x['student_id']) + '_' + str(x['item_id']), axis=1).unique()
+    return len(set(r_train) - (set(r_valid))) == 0
 
 def quadruplet_format(data: pd.DataFrame):
     """
@@ -445,3 +447,143 @@ def get_metadata(data: pd.DataFrame, keys: List[str]) -> dict:
     for attr in keys:
         m["num_"+attr] = len(data[attr].unique())
     return m
+
+def convert_to_records(data):
+    df = data.rename(columns={
+        'student_id': 'user_id',
+        'answers': 'correct',
+        'dimensions': 'dimension_id'
+    })
+    return df.to_records(index=False, column_dtypes={'user_id': int, 'item_id': int, 'correct': float, 'dimension_id': int})
+
+def load_dataset(config) :
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # read datasets
+    i_fold = 0
+    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
+    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
+    #parameter
+    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
+    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl',weights_only=True)
+    train_quadruplets = pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_fold}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+    valid_quadruplets= pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_fold}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+
+    train_data = dataset.LoaderDataset(convert_to_records(train_quadruplets), concept_map, metadata, nb_modalities)
+    valid_data = dataset.LoaderDataset(convert_to_records(valid_quadruplets), concept_map, metadata, nb_modalities)
+
+    return train_data,valid_data,concept_map,metadata
+
+
+
+def objective(trial, config, train_data, valid_data):
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 9,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] = 12
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+def load_dataset_resources(config, base_path: str = "../2-preprocessed_data/"):
+    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
+    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
+    #parameter
+    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
+    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl',weights_only=True)
+    return concept_map, metadata, nb_modalities
+
+def horizontal_data(config, i_folds):
+
+    train = pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_folds}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+    valid= pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_folds}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+
+    return convert_to_records(train), convert_to_records(valid)
+
+
+def load_dataset_new(config) :
+    train_data, valid_data, concept_map, metadata = load_dataset(config)
+    gc.collect()
+    torch.cuda.empty_cache()
+    # read datasets
+    train_data, valid_data = utils_liriscat.prepare_dataset(config, i_fold=0)
+
+    return train_data,valid_data,concept_map,metadata
+
+def launch_test(trial,train_data,valid_data,config) :
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+
+def objective_new(trial, launch_test_var, config, train_data, valid_data):
+    rc = Client()
+    rc[:].use_dill()
+    lview = rc.load_balanced_view()
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 11,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] =12
+
+    return lview.apply_async(launch_test_var,trial,train_data,valid_data, config).get()
