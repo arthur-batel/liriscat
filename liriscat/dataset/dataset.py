@@ -34,6 +34,7 @@ class Dataset(IMPACTDataset):
         self._questions_id = self.items_id
 
         self._n_meta = self._metadata['min_nb_users_logs'] // 5
+        self._qu_max = self._metadata['max_nb_questions_per_user']
 
         assert max(self._users_id) < self.n_users, \
             f'Require item ids renumbered : max user id = {max(self._users_id)}; nb users = {self.n_users}'
@@ -42,7 +43,7 @@ class Dataset(IMPACTDataset):
         assert max(self._concepts_id) < self.n_categories, \
             f'Require concept ids renumbered : max concept id = {max(self._concepts_id)}; nb categories= {self.n_categories}'
         assert self._n_meta <= self._metadata['min_nb_users_logs'] - self.config["n_query"], \
-            f'Some users have not enough logs to perform to submit {self.config["n_query"]} questions: min number of user logs = {self._metadata["min_nb_users_logs"]}'
+            f'Some users have not enough logs to submit {self.config["n_query"]} questions, the support set is too small: min number of user logs = {self._metadata["min_nb_users_logs"]}'
 
         self._torch_array = torch.from_numpy(df.to_numpy()).to(device=self.device)
         self._log_tensor = self._generate_log_tensor()  # precompute right away
@@ -59,28 +60,28 @@ class Dataset(IMPACTDataset):
     @property
     def n_questions(self):
         """
-        @return: Total number of items in the dataset (before splitting)
+        @return: Total number of questions in the dataset (before splitting)
         """
         return self.metadata["num_item_id"]
 
     @property
     def config(self):
         """
-        @return: Total number of users in the dataset (before splitting)
+        @return: Global configuration dictionary
         """
         return self._config
 
     @property
     def n_meta(self):
         """
-        @return: Total number of users in the dataset (before splitting)
+        @return: Size of the meta set (nb of questions set aside for each user in order to perform evaluation)
         """
         return self._n_meta
 
     @property
     def n_query(self):
         """
-        @return: Total number of users in the dataset (before splitting)
+        @return: Nb of questions to query per user from the support set
         """
         return self.config["n_query"]
 
@@ -98,8 +99,24 @@ class Dataset(IMPACTDataset):
 
     @property
     def cq_max(self):
-        "Maximum Number of categories per question in the dataset"
+        """
+        @return: Maximum Number of categories per question in the dataset
+        """
         return self.metadata['max_nb_categories_per_question']
+
+    @property
+    def qu_max(self):
+        """
+        @return: Maximum Number of questions per user in the dataset
+        """
+        return self._qu_max
+
+    @property
+    def sup_max(self):
+        """
+        @return: Maximum size of the support set
+        """
+        return self.qu_max - self.n_meta
 
     @property
     def query_seed(self):
@@ -256,7 +273,7 @@ class EvalDataset(CATDataset):
 
 class QueryEnv:
     """
-    QueryEnv manages the Query set, Set of submitted questions and the Meta set (prealocation, storage, update) :
+    QueryEnv manages the Support set, Query Set, Submitted set and the Meta set (prealocation, storage, update) :
         - store the data : preallocate a container which is then emptied and refilled at every users batch
         - save and update questions membership in Query, Submitted and Meta set
         - transform the data into CDM's compatible formats
@@ -264,18 +281,24 @@ class QueryEnv:
     """
 
     def __init__(self, data: CATDataset, device: torch.device, batch_size: int):
-        self.n_query = data.config['n_query']
+        """
+
+        :param data: CATDataset object
+        :param device: torch.device object
+        :param batch_size: Number of users in the batch
+        """
+        self.n_query = data.config['n_query'] # Nb of questions to query
         self.device = device
         self.cq_max = data.cq_max # Max nb of categories per question
+        self.qu_max = data.qu_max # Max nb of questions per user
 
-        max_nb_cat_per_question = data.metadata['max_nb_categories_per_question']
-        max_data_batch_size = self.n_query * max_nb_cat_per_question * batch_size
+        max_sub_data_batch_size = self.n_query * self.cq_max * batch_size # maximum size of all the submitted data in this batch
 
         # Initialize attributes
         ## Variable storing the current batch size
         self._current_batch_size = batch_size
 
-        ## Tensors storing all query data (submitted and unsubmitted)
+        ## Container (torch.Tensor) storing information about all query data (submitted and unsubmitted)
         self._query_len = torch.empty(batch_size, dtype=torch.long, device=device)
         self._query_users_vec = torch.empty(batch_size, dtype=torch.long, device=device)
         self._query_questions = torch.empty(batch_size, data.n_query, dtype=torch.long, device=device)
@@ -284,11 +307,11 @@ class QueryEnv:
         self._query_cat = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.long, device=device)
         self._query_cat_mask = torch.empty(batch_size, data.n_query * data.cq_max, dtype=torch.bool, device=device)
 
-        ## Tensors storing submitted query data (after expansion of the logs due to multiple categories per question)
-        self.sub_user_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
-        self.sub_question_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
-        self.sub_labels = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
-        self.sub_category_ids = torch.empty(max_data_batch_size, dtype=torch.long, device=device)
+        ## Container (torch.Tensor) storing submitted query data (after expansion of the logs due to multiple categories per question)
+        self.sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self.sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self.sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self.sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
 
         ## Tensor storing the indices of the questions submitted to the user
         self._query_indices = torch.arange(0, data.n_query, device=device, dtype=torch.long).repeat(batch_size,
