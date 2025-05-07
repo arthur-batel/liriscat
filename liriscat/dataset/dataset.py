@@ -257,10 +257,10 @@ class EvalDataset(CATDataset):
 class QueryEnv:
     """
     QueryEnv manages the Query set, Set of submitted questions and the Meta set (prealocation, storage, update) :
-        - store the data
-        - save and update there membership to the three sets
-        - transform the data to IMPACT compatible format
-    The data of each batch of users overwrites the previous one to optimize GPU memory allocation
+        - store the data : preallocate a container which is then emptied and refilled at every users batch
+        - save and update questions membership in Query, Submitted and Meta set
+        - transform the data into CDM's compatible formats
+    The data of each batch of users overwrites the previous one in the data container to optimize GPU memory allocation
     """
 
     def __init__(self, data: CATDataset, device: torch.device, batch_size: int):
@@ -379,7 +379,7 @@ class QueryEnv:
 
     def loading_new_users(self, current_batch_size: int):
         """
-        Limit the access to the only part of tensors which have been refilled in the last batch (to execute at every batch)
+        Adapt the data container to the new batch of users by limiting the access to the only part of the container which have been refilled (to execute at every batch)
         """
         self._current_batch_size = current_batch_size
         self._current_charged_log_nb = 0
