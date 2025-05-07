@@ -1,6 +1,6 @@
 from collections import defaultdict
 from typing import List
-
+from functools import partial
 import pandas as pd
 import random
 import numpy as np
@@ -15,10 +15,10 @@ sys.path.append("../../")
 import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-from IMPACT import utils
-utils.set_seed(0)
-from IMPACT import dataset
-from IMPACT import model
+from IMPACT import utils as utils_IMPACT
+utils_IMPACT.set_seed(0)
+from IMPACT import dataset as dataset_IMPACT
+from IMPACT import model as model_IMPACT
 import optuna
 import logging
 import gc
@@ -29,20 +29,6 @@ from ipyparallel import Client
 import dill
 
 cat_absolute_path = os.path.abspath('../../')
-
-rc = Client()
-rc[:].use_dill()
-lview = rc.load_balanced_view()
-
-
-rc[:].execute("import sys; sys.path.append('"+cat_absolute_path+"')")
-logging.info("sys.path.append("+cat_absolute_path+")")
-with rc[:].sync_imports():
-    import json
-    from IMPACT import utils, model, dataset
-    import logging
-    import gc
-    import torch
 
 from liriscat import utils as utils_liriscat
 
@@ -456,66 +442,6 @@ def convert_to_records(data):
     })
     return df.to_records(index=False, column_dtypes={'user_id': int, 'item_id': int, 'correct': float, 'dimension_id': int})
 
-def load_dataset(config) :
-
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    # read datasets
-    i_fold = 0
-    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
-    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
-    #parameter
-    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
-    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl',weights_only=True)
-    train_quadruplets = pd.read_csv(
-    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_fold}.csv',
-    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
-                                                             "dimension_id": int})
-    valid_quadruplets= pd.read_csv(
-    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_fold}.csv',
-    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
-                                                             "dimension_id": int})
-
-    train_data = dataset.LoaderDataset(convert_to_records(train_quadruplets), concept_map, metadata, nb_modalities)
-    valid_data = dataset.LoaderDataset(convert_to_records(valid_quadruplets), concept_map, metadata, nb_modalities)
-
-    return train_data,valid_data,concept_map,metadata
-
-
-
-def objective(trial, config, train_data, valid_data):
-
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
-    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
-    #num_responses = trial.suggest_int('num_responses', 9,13)
-
-    config['learning_rate'] = lr
-    config['lambda'] = lambda_param
-    config['num_responses'] = 12
-
-    algo = model.IMPACT(**config)
-
-    # Init model
-    algo.init_model(train_data, valid_data)
-
-    # train model ----
-    algo.train(train_data, valid_data)
-
-    best_valid_metric = algo.best_valid_metric
-
-    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
-
-    del algo.model
-    del algo
-
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    return best_valid_metric
 
 def load_dataset_resources(config, base_path: str = "../2-preprocessed_data/"):
     concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
@@ -539,51 +465,59 @@ def horizontal_data(config, i_folds):
     return convert_to_records(train), convert_to_records(valid)
 
 
-def load_dataset_new(config) :
-    train_data, valid_data, concept_map, metadata = load_dataset(config)
+def load_dataset(config) :
     gc.collect()
     torch.cuda.empty_cache()
     # read datasets
     train_data, valid_data = utils_liriscat.prepare_dataset(config, i_fold=0)
+    # read datasets ressources
+    concept_map, metadata, nb_modalities= load_dataset_resources(config)
 
     return train_data,valid_data,concept_map,metadata
 
-def launch_test(trial,train_data,valid_data,config) :
 
-    gc.collect()
-    torch.cuda.empty_cache()
+def tarjan_scc(adj_matrix, idx_to_genres):
+    n = len(adj_matrix)
+    index = [-1] * n
+    lowlink = [0] * n
+    on_stack = [False] * n
+    stack = []
+    sccs = []
+    current_index = [0]  # use a list to allow modifications in closure
 
-    algo = model.IMPACT(**config)
+    def strongconnect(v):
+        # Set the depth index for v
+        index[v] = current_index[0]
+        lowlink[v] = current_index[0]
+        current_index[0] += 1
+        stack.append(v)
+        on_stack[v] = True
 
-    # Init model
-    algo.init_model(train_data, valid_data)
+        # Consider successors of v
+        for w in range(n):
+            if adj_matrix[v][w] == 1:  # edge from v to w
+                if index[w] == -1:
+                    # Successor w has not yet been visited
+                    strongconnect(w)
+                    lowlink[v] = min(lowlink[v], lowlink[w])
+                elif on_stack[w]:
+                    # Successor w is on the stack, so it's part of the current SCC
+                    lowlink[v] = min(lowlink[v], index[w])
 
-    # train model ----
-    algo.train(train_data, valid_data)
+        # If v is a root node, pop the stack and generate an SCC
+        if lowlink[v] == index[v]:
+            # Start a new strongly connected component
+            scc = []
+            while True:
+                w = stack.pop()
+                on_stack[w] = False
+                scc.append(idx_to_genres[w])
+                if w == v:
+                    break
+            sccs.append(scc)
 
-    best_valid_metric = algo.best_valid_metric
+    for v in range(n):
+        if index[v] == -1:
+            strongconnect(v)
 
-    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
-
-    del algo.model
-    del algo
-
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    return best_valid_metric
-
-
-def objective_new(trial, launch_test_var, config, train_data, valid_data):
-    rc = Client()
-    rc[:].use_dill()
-    lview = rc.load_balanced_view()
-    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
-    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
-    #num_responses = trial.suggest_int('num_responses', 11,13)
-
-    config['learning_rate'] = lr
-    config['lambda'] = lambda_param
-    config['num_responses'] =12
-
-    return lview.apply_async(launch_test_var,trial,train_data,valid_data, config).get()
+    return sccs

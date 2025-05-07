@@ -1,6 +1,6 @@
 import json
 from turtledemo.forest import start
-
+import gc
 import numba
 import numpy as np
 import torch
@@ -17,6 +17,9 @@ from datetime import datetime
 
 from sklearn.metrics import roc_auc_score
 from IMPACT import dataset
+from IMPACT import model
+from ipyparallel import Client
+from functools import partial
 
 def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
@@ -818,3 +821,77 @@ def prepare_dataset(config: dict, i_fold:int=0) :
     valid_data = dataset.LoaderDataset(valid, concept_map, metadata, nb_modalities)
 
     return train_data, valid_data
+
+def IMPACT_pre_train(trial, config, train_data, valid_data):
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 9,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] = 12
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+def launch_test(trial,train_data,valid_data,config) :
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+
+def objective_hps(trial, config, train_data, valid_data):
+    rc = Client()
+    rc[:].use_dill()
+    lview = rc.load_balanced_view()
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 11,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] =12
+    launch_test_var = partial(launch_test, train_data=train_data, valid_data=valid_data, config=config)
+
+    return lview.apply_async(launch_test_var,trial).get()
