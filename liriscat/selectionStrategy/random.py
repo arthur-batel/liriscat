@@ -11,14 +11,13 @@ class Random(AbstractSelectionStrategy):
         super().__init__('Random', metadata, **config)
         self.model = RandomModel()
         logging.info(self.name)
-        self.config = config
-        self.generator = torch.Generator(device = self.config['device']).manual_seed(self.config['seed'])
+        self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
 
     def select_action(self,options_dict):
 
         # Generate random indices efficiently
-        remove_indices = torch.randint(options_dict['query_len'].max(), size=options_dict['query_len'].shape, device=self.device, generator=self.generator)
-        remove_indices = torch.remainder(remove_indices, options_dict['query_len'])
+        remove_indices = torch.randint(high=options_dict['support_len'].max(), size=options_dict['support_len'].shape, device=self.device, generator=self._rng)
+        remove_indices = torch.remainder(remove_indices, options_dict['support_len'])
 
         return remove_indices
 
