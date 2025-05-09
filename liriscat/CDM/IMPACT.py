@@ -37,7 +37,7 @@ class CATIMPACT(IMPACT) :
         super().init_model(train_data,valid_data)
 
 
-        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'],foreach=False )
+        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'])
 
         self.params_scaler = torch.amp.GradScaler(self.config['device'])
 
@@ -96,7 +96,7 @@ class CATIMPACT(IMPACT) :
 
         user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
                                                       lr=self.config[
-                                                          'inner_user_lr'],foreach=False )  # todo : Decide How to use a scheduler
+                                                          'inner_user_lr'])  # todo : Decide How to use a scheduler
 
         user_params_scaler = torch.amp.GradScaler(self.config['device'])
 

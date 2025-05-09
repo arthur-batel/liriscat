@@ -190,6 +190,13 @@ class CATDataset(Dataset, data.dataset.Dataset):
 
         self.rng = np.random.default_rng(self.query_seed)
 
+    def reset_rng(self):
+        """
+        Reset the random number generator to a new seed
+        :param seed: new seed
+        """
+        self.rng = np.random.default_rng(self.query_seed)
+
     def __len__(self):
         'Denotes the total number of samples'
         return len(self.user_dict)
