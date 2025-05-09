@@ -49,6 +49,12 @@ class Dataset(IMPACTDataset):
         self._log_tensor = self._generate_log_tensor()  # precompute right away
         self._user_dict, self._user_id2idx, self._user_idx2id = self._generate_user_dict()
         self._cat_tensor, self._cat_mask, self._cat_nb = self._generate_qc_tensor()
+        # flatten: [n_questions * cq_max]
+        self._cat_flat = self._cat_tensor.reshape(-1)
+        self._mask_flat = self._cat_mask.reshape(-1)
+        # offset[i] = i * cq_max
+        self._cat_offset = (torch.arange(self.n_questions, device=self.device)
+                            * self.cq_max)
 
     @property
     def n_actual_users(self):
@@ -209,25 +215,47 @@ class CATDataset(Dataset, data.dataset.Dataset):
         :return: dictionary of support and meta data of the user, in kit for Dataloader collate function
         """
         data = self.user_dict[index]
+        Q_u = data['q_ids'].size(0)
 
-        observed_index = (self.rng.permutation(data['q_ids'].shape[0]) + index) % data['q_ids'].shape[0]
-        meta_index = observed_index[-self.n_meta:]
-        query_index = observed_index[:-self.n_meta]
+        # reproducible perm + split
+        perm = (self.rng.permutation(Q_u) + index) % Q_u
+        meta_idx, support_idx = perm[-self.n_meta:], perm[:-self.n_meta]
 
-        return {'u_idx' :self.user_idx2id[index],  # int
+        # gather question‐ids & labels
+        mq = data['q_ids'][meta_idx]; ml = data['labels'][meta_idx]
+        sq = data['q_ids'][support_idx]; sl = data['labels'][support_idx]
 
-                # Support set
-                'sq':data['q_ids'][query_index],  # 1D torch.Tensor, size = Q_u
-                'sl':data['labels'][query_index],  # 1D torch.Tensor, size = Q_u
-                'sc':self.cat_tensor[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                'sc_mask':self.cat_mask[data['q_ids'][query_index]].flatten(),  # 1D torch.Tensor, size = Q_u x cq_max
-                'sc_nb':self.cat_nb[data['q_ids'][query_index]],  # 1D torch.Tensor, size = Q_u
+        # 2) SINGLE fancy‐index into your flattened cat/mask
+        #    cat_offset[sq] is [|Q_u|], unsqueeze→ [|Q_u|,1]
+        off_s = self._cat_offset[sq].unsqueeze(1)
+        idx_s = off_s + torch.arange(self.cq_max, device=self.device)  # [|Q_u|,cq_max]
+        sc      = self._cat_flat[idx_s].reshape(-1)
+        sc_mask = self._mask_flat[idx_s].reshape(-1)
+        sc_nb   = self.cat_nb[sq]
 
-                'mq':data['q_ids'][meta_index],  # 1D torch.Tensor, size = M
-                'ml':data['labels'][meta_index],  # 1D torch.Tensor, size = M
-                'mc':self.cat_tensor[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                'mc_mask':self.cat_mask[data['q_ids'][meta_index]].flatten(),  # 1D torch.Tensor, size = M x cq_max
-                'mc_nb':self.cat_nb[data['q_ids'][meta_index]]}  # 1D torch.Tensor, size = M
+        off_m = self._cat_offset[mq].unsqueeze(1)
+        idx_m = off_m + torch.arange(self.cq_max, device=self.device)
+        mc      = self._cat_flat[idx_m].reshape(-1)
+        mc_mask = self._mask_flat[idx_m].reshape(-1)
+        mc_nb   = self.cat_nb[mq]
+
+        return {
+            'u_idx': self.user_idx2id[index],     # int
+
+            # Support set
+            'sq':   sq,        # 1D torch.Tensor, size = Q_u,   where Q_u = data['q_ids'].size(0) - n_meta
+            'sl':   sl,        # 1D torch.Tensor, size = Q_u
+            'sc':   sc,        # 1D torch.Tensor, size = Q_u * cq_max
+            'sc_mask': sc_mask,# 1D torch.Tensor, size = Q_u * cq_max
+            'sc_nb':   sc_nb,  # 1D torch.Tensor, size = Q_u
+
+            # Meta set
+            'mq':   mq,        # 1D torch.Tensor, size = M,     where M = n_meta
+            'ml':   ml,        # 1D torch.Tensor, size = M
+            'mc':   mc,        # 1D torch.Tensor, size = M * cq_max
+            'mc_mask': mc_mask,# 1D torch.Tensor, size = M * cq_max
+            'mc_nb':   mc_nb   # 1D torch.Tensor, size = M
+        }
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -267,17 +295,28 @@ class EvalDataset(CATDataset):
         """
 
         self.set_query_seed(query_seed)
-        self._meta_mask = torch.zeros_like(self.log_tensor, device=self.device, dtype=torch.bool)
+        U = len(self)  # number of users
 
-        for index in range(len(self)):
-            sample_tuple = self.generate_sample(index)
+        # zero mask once
+        self._meta_mask.zero_()
+        # temp buffers
+        all_mq, all_u = [], []
 
-            self._meta_mask.index_put_(
-                (torch.full(sample_tuple['mq'].shape, self.user_idx2id[index], dtype=torch.long, device=self.device),
-                 sample_tuple['mq']),
-                torch.ones_like(sample_tuple['mq'], dtype=torch.bool)
-            )
-            self._precomputed_batch[index] = sample_tuple
+        for i in range(U):
+            s = self.generate_sample(i)
+            all_mq.append(s['mq'])
+            all_u.append(torch.full_like(s['mq'],
+                                         self.user_idx2id[i],
+                                         device=self.device))
+            self._precomputed_batch[i] = s
+
+        # cat into 1D
+        u_flat = torch.cat(all_u)
+        mq_flat = torch.cat(all_mq)
+
+        # single index_put_ for all
+        self._meta_mask.index_put_((u_flat, mq_flat),
+                                   torch.ones_like(mq_flat, dtype=torch.bool))
 
     def __getitem__(self, index):
         # return the data of the user reindexed in this dataset instance
@@ -549,7 +588,7 @@ class QueryEnv:
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
         """
-        Extends the query data for multiple categories handling with IMPACT format
+        Extends the query data for Multiple Categories Handling (MCH) with IMPACT format
         :param QQ:
         :param QL:
         :param QC_NB:
