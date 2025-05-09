@@ -300,7 +300,7 @@ class AbstractSelectionStrategy(ABC):
         self.best_S_params = self.get_params()
         self.best_CDM_params = self.CDM.get_params()
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr,foreach=False )
 
         # Reduce the learning rate when a metric has stopped improving
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=2, factor=0.5)
