@@ -55,7 +55,6 @@ class CATIMPACT(IMPACT) :
 
         self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
 
-        
         cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
         self.model.prior_cov_inv = torch.inverse(cov_matrix)
@@ -93,7 +92,7 @@ class CATIMPACT(IMPACT) :
         m_user_ids, m_question_ids, m_category_ids = meta_data
 
         data = dataset.SubmittedDataset(query_data)
-        dataloader = DataLoader(data, batch_size=2048, shuffle=True)
+        dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
 
         user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
                                                       lr=self.config[
