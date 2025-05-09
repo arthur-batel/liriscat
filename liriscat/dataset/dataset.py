@@ -316,10 +316,10 @@ class QueryEnv:
         self._support_cat_mask = torch.empty(batch_size, data.sup_max * data.cq_max, dtype=torch.bool, device=device) # Shape = U_batch x |max_u Q_sup(u)| x cq_max
 
         ## Submitted questions container (torch.Tensor) storing submitted data. 1D form: (l=users x questions x cat/q). After expansion for multiple categories/question
-        self.sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self.sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self.sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self.sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
 
         ## Tensor storing the indices of the questions submitted to the user
         self._support_indices = torch.arange(0, data.sup_max, device=device, dtype=torch.long).repeat(batch_size,
@@ -410,6 +410,22 @@ class QueryEnv:
         return self._support_indices[:self._current_batch_size, :]
 
     @property
+    def sub_user_ids(self):
+        return self._sub_user_ids[:self._current_charged_log_nb]
+    
+    @property
+    def sub_question_ids(self):
+        return self._sub_question_ids[:self._current_charged_log_nb]
+    
+    @property
+    def sub_labels(self):
+        return self._sub_labels[:self._current_charged_log_nb]
+    
+    @property
+    def sub_category_ids(self):
+        return self._sub_category_ids[:self._current_charged_log_nb]
+
+    @property
     def row_idx(self):
         return self._row_idx[:self._current_batch_size]
     
@@ -468,7 +484,7 @@ class QueryEnv:
         actions_indices = self.support_indices[self.row_idx,actions+t]  # Indices in the support set of the questions to be moved : question submitted = questions[actions_indices]
 
         with torch.no_grad():
-            idx = self.current_charged_log_nb
+            
 
             new_user_ids, new_question_ids, new_labels = self.generate_IMPACT_query(
                 self.support_questions[self.row_idx, actions_indices],
@@ -486,14 +502,16 @@ class QueryEnv:
             self.support_indices[self.row_idx, t] = actions_indices
             self._support_indices.index_put_((self.row_idx, actions+t), tmp)
 
-            # increment the number of submitted logs
+            # Add the new data to the set of submitted questions
+            idx = self.current_charged_log_nb
+
+            ## increment the number of submitted logs
             self._current_charged_log_nb += new_user_ids.shape[0]
 
-            # Add the new data to the set of submitted questions
-            self.sub_user_ids[idx:self.current_charged_log_nb] = new_user_ids
-            self.sub_question_ids[idx:self.current_charged_log_nb] = new_question_ids
-            self.sub_labels[idx:self.current_charged_log_nb] = new_labels
-            self.sub_category_ids[idx:self.current_charged_log_nb] = new_category_ids
+            self._sub_user_ids[idx:self.current_charged_log_nb] = new_user_ids
+            self._sub_question_ids[idx:self.current_charged_log_nb] = new_question_ids
+            self._sub_labels[idx:self.current_charged_log_nb] = new_labels
+            self._sub_category_ids[idx:self.current_charged_log_nb] = new_category_ids
 
     def get_query_options(self, t):
         """
@@ -515,10 +533,10 @@ class QueryEnv:
         :return:
         """
         return {
-            "user_ids": self.sub_user_ids[:self.current_charged_log_nb],
-            "question_ids": self.sub_question_ids[:self.current_charged_log_nb],
-            "labels": self.sub_labels[:self.current_charged_log_nb],
-            "category_ids": self.sub_category_ids[:self.current_charged_log_nb]}
+            "user_ids": self.sub_user_ids,
+            "question_ids": self.sub_question_ids,
+            "labels": self.sub_labels,
+            "category_ids": self.sub_category_ids}
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
         """
