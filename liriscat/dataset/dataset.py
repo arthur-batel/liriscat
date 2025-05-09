@@ -298,9 +298,11 @@ class QueryEnv:
         self.n_query = data.config['n_query'] # Nb of questions to query
         self.device = device
         self.cq_max = data.cq_max # Max nb of categories per question
+
         self.sup_max = data.sup_max
         self.n_meta = data.n_meta # Size of the meta set (nb of questions set aside for each user in order to perform evaluation)
         max_sub_data_batch_size = batch_size * self.n_query * self.cq_max  # maximum size of all the submitted data in this batch
+
 
         # Initialize attributes
         ## Variable storing the current batch size
