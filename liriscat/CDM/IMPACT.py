@@ -3,6 +3,7 @@ from collections import defaultdict
 
 from torch.masked import MaskedTensor
 import torch.nn as nn
+from IMPACT.model.IMPACT import resp_to_mod
 
 import torch.utils.data as data
 
@@ -41,30 +42,6 @@ class CATIMPACT(IMPACT) :
 
         self.params_scaler = torch.amp.GradScaler(self.config['device'])
 
-    def initialize_test_users(self, test_data):
-        g = torch.Generator(self.config['device']).manual_seed(42)
-        
-        train_valid_users = torch.tensor(list(set(range(test_data.n_users)) - test_data.users_id),
-                                         device=self.config['device'])
-        train_valid_users = train_valid_users.to(dtype=torch.long)
-        user_embeddings = self.model.users_emb(train_valid_users).float()
-        
-        ave = user_embeddings.mean(dim=0)
-        std = user_embeddings.std(dim=0)
-
-        E = torch.normal(ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1)/2, generator=g)
-        E = E - E.mean(dim=0) + ave
-
-        self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
-        
-        cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
-
-        self.model.prior_cov_inv = torch.inverse(cov_matrix)
-
-        self.model.prior_mean = ave.unsqueeze(0)
-        self.model.get_regularizer = functools.partial(self.get_regularizer_with_pior)
-
-
     def get_regularizer_with_pior(self):
         A = (self.model.users_emb.weight - self.model.prior_mean) 
         S = self.model.prior_cov_inv
@@ -88,6 +65,34 @@ class CATIMPACT(IMPACT) :
             self.params_scaler.scale(loss).backward()
             self.params_scaler.step(self.params_optimizer)
             self.params_scaler.update()
+
+    def init_test(self, test_data):
+        self.model.R = test_data.log_tensor
+        self.model.ir_idx = resp_to_mod(self.model.R, self.model.nb_modalities)
+        self.model.ir_idx = self.model.ir_idx.to(self.config['device'], non_blocking=True)
+        self.init_users_prior(test_data)
+
+    def init_users_prior(self, test_data):
+        train_valid_users = torch.tensor(list(set(range(test_data.n_users)) - test_data.users_id),
+                                         device=self.config['device'])
+        train_valid_users = train_valid_users.to(dtype=torch.long)
+        user_embeddings = self.model.users_emb(train_valid_users).float()
+        
+        ave = user_embeddings.mean(dim=0)
+        std = user_embeddings.std(dim=0)
+
+        E = torch.normal(ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1)/2)
+        E = E - E.mean(dim=0) + ave
+
+        self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
+
+        cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
+
+        self.model.prior_cov_inv = torch.inverse(cov_matrix)
+
+        self.model.prior_mean = ave.unsqueeze(0)
+        self.model.get_regularizer = functools.partial(self.get_regularizer_with_pior)
+
 
     def update_users(self,query_data, meta_data, meta_labels) :
         logging.debug("- Update users ")

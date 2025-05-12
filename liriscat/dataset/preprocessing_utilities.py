@@ -1,6 +1,6 @@
 from collections import defaultdict
 from typing import List
-
+from functools import partial
 import pandas as pd
 import random
 import numpy as np
@@ -8,6 +8,29 @@ import torch
 
 from sklearn.model_selection import KFold, train_test_split
 from tqdm import tqdm
+
+import sys
+sys.path.append("../../")
+
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+from IMPACT import utils as utils_IMPACT
+utils_IMPACT.set_seed(0)
+from IMPACT import dataset as dataset_IMPACT
+from IMPACT import model as model_IMPACT
+import optuna
+import logging
+import gc
+import json
+from importlib import reload
+
+from ipyparallel import Client
+import dill
+
+cat_absolute_path = os.path.abspath('../../')
+
+from liriscat import utils as utils_liriscat
 
 def stat_unique(data: pd.DataFrame, key):
     """
@@ -72,48 +95,7 @@ def split_data_horizontally(df):
     data = data.groupby(key_attrs).agg(d).reset_index()
     return data
 
-def split_data_vertically(quadruplet, test_prop, valid_prop, folds_nb=5):
-    """
-    Split data (list of triplets) into train, validation, and test sets.
-
-    :param quadruplet: List of triplets (sid, qid, score)
-    :type quadruplet: list
-    :param test_prop: Fraction of the test set
-    :type test_prop: float
-    :param valid_prop: Fraction of the validation set
-    :type valid_prop: float
-    :param least_test_length: Minimum number of items a student must have to be included in the test set.
-    :type least_test_length: int or None
-    :return: Train, validation, and test sets.
-    :rtype: list, list, list
-    """
-
-    kf = KFold(n_splits=folds_nb, shuffle=True)
-    df = pd.DataFrame(quadruplet)
-    df.columns = ["student_id","item_id","answer","dimension_id"]
-
-    train = [[]  for _ in range(folds_nb)]
-    valid = [[]  for _ in range(folds_nb)]
-    test = [[]  for _ in range(folds_nb)]
-
-    for i_group, group in df.groupby('student_id'):
-        group_idxs = np.array(group.index)
-
-        for i_fold,(train_valid_fold_idx, test_fold_idx)  in enumerate(kf.split(group_idxs)): #method of sci_ski_learn
-
-            train_valid_item_idx = group_idxs[train_valid_fold_idx]
-            test_item_idx = group_idxs[test_fold_idx]
-
-            train_item_idx, valid_item_idx = train_test_split(train_valid_item_idx, test_size=float(valid_prop) / (
-                        1.0 - float(test_prop)), shuffle=True)
-
-            train[i_fold] += df.loc[train_item_idx, :].values.tolist()
-            valid[i_fold] += df.loc[valid_item_idx, :].values.tolist()
-            test[i_fold] += df.loc[test_item_idx, :].values.tolist()
-
-    return train, valid, test
-
-def split_data_vertically_new(quadruplet, valid_prop):
+def split_data_vertically_unique_fold(quadruplet, valid_prop):
     """
     Split data (list of double) into train and validation sets.
 
@@ -126,22 +108,18 @@ def split_data_vertically_new(quadruplet, valid_prop):
     :return: Train and validation sets.
     :rtype: list, list, list
     """
-    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "answer", "dimension_id"])
-    df.columns = ["student_id", "item_id", "answer", "dimension_id"]
-    df.head()
+    df = pd.DataFrame(quadruplet, columns=["student_id", "item_id", "correct", "dimension_id"])
+    df.columns = ["student_id", "item_id", "correct", "dimension_id"]
     df_grouped = df.groupby(['student_id', 'item_id']).agg(
-        answers=('answer', list),
+        answers=('correct', list),
         dimensions=('dimension_id', list)
     ).reset_index()
 
     train_list = []
     valid_list = []
 
-    # method of sci_ski_learn
-
     for i_group, group in df_grouped.groupby('student_id'):
-        group_idxs = np.array(group.index)
-        train_part, valid_part = train_test_split(df_grouped, test_size=valid_prop, shuffle=True)
+        train_part, valid_part = train_test_split(group, test_size=valid_prop, shuffle=True)
         train_list.append(train_part)
         valid_list.append(valid_part)
 
@@ -152,6 +130,16 @@ def split_data_vertically_new(quadruplet, valid_prop):
     valid_expanded = valid.explode(['answers', 'dimensions'])
 
     return train_expanded, valid_expanded
+
+def are_student_sets_equal(train, valid):
+    i_train = train['item_id'].unique()
+    i_valid= valid['item_id'].unique()
+    return len(set(i_train) - (set(i_valid)))==0
+
+def are_pair_student_equal(train, valid):
+    r_train = train.apply(lambda x: str(x['student_id']) + '_' + str(x['item_id']), axis=1).unique()
+    r_valid = valid.apply(lambda x: str(x['student_id']) + '_' + str(x['item_id']), axis=1).unique()
+    return len(set(r_train) - (set(r_valid))) == 0
 
 def quadruplet_format(data: pd.DataFrame):
     """
@@ -445,3 +433,91 @@ def get_metadata(data: pd.DataFrame, keys: List[str]) -> dict:
     for attr in keys:
         m["num_"+attr] = len(data[attr].unique())
     return m
+
+def convert_to_records(data):
+    df = data.rename(columns={
+        'student_id': 'user_id',
+        'answers': 'correct',
+        'dimensions': 'dimension_id'
+    })
+    return df.to_records(index=False, column_dtypes={'user_id': int, 'item_id': int, 'correct': float, 'dimension_id': int})
+
+
+def load_dataset_resources(config, base_path: str = "../2-preprocessed_data/"):
+    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
+    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
+    #parameter
+    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
+    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl',weights_only=True)
+    return concept_map, metadata, nb_modalities
+
+def horizontal_data(config, i_folds):
+
+    train = pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_folds}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+    valid= pd.read_csv(
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_folds}.csv',
+    encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
+                                                             "dimension_id": int})
+
+    return convert_to_records(train), convert_to_records(valid)
+
+
+def load_dataset(config) :
+    gc.collect()
+    torch.cuda.empty_cache()
+    # read datasets
+    train_data, valid_data = utils_liriscat.prepare_dataset(config, i_fold=0)
+    # read datasets ressources
+    concept_map, metadata, nb_modalities= load_dataset_resources(config)
+
+    return train_data,valid_data,concept_map,metadata
+
+
+def tarjan_scc(adj_matrix, idx_to_genres):
+    n = len(adj_matrix)
+    index = [-1] * n
+    lowlink = [0] * n
+    on_stack = [False] * n
+    stack = []
+    sccs = []
+    current_index = [0]  # use a list to allow modifications in closure
+
+    def strongconnect(v):
+        # Set the depth index for v
+        index[v] = current_index[0]
+        lowlink[v] = current_index[0]
+        current_index[0] += 1
+        stack.append(v)
+        on_stack[v] = True
+
+        # Consider successors of v
+        for w in range(n):
+            if adj_matrix[v][w] == 1:  # edge from v to w
+                if index[w] == -1:
+                    # Successor w has not yet been visited
+                    strongconnect(w)
+                    lowlink[v] = min(lowlink[v], lowlink[w])
+                elif on_stack[w]:
+                    # Successor w is on the stack, so it's part of the current SCC
+                    lowlink[v] = min(lowlink[v], index[w])
+
+        # If v is a root node, pop the stack and generate an SCC
+        if lowlink[v] == index[v]:
+            # Start a new strongly connected component
+            scc = []
+            while True:
+                w = stack.pop()
+                on_stack[w] = False
+                scc.append(idx_to_genres[w])
+                if w == v:
+                    break
+            sccs.append(scc)
+
+    for v in range(n):
+        if index[v] == -1:
+            strongconnect(v)
+
+    return sccs
