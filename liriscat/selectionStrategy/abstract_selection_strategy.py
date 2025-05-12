@@ -7,7 +7,7 @@ import numba
 import numpy as np
 from itertools import chain
 from stat import S_IREAD
-from IMPACT.model.IMPACT import resp_to_mod
+
 from sklearn.metrics import roc_auc_score
 from torch.cuda import device
 from torch.utils.data import DataLoader
@@ -192,6 +192,7 @@ class AbstractSelectionStrategy(ABC):
         mean_loss = torch.mean(torch.stack(loss_list))
 
         return mean_loss, self.valid_metric(pred_tensor, label_tensor)
+    
 
     @evaluation_state
     def evaluate_test(self, test_dataset: dataset.EvalDataset):
@@ -200,14 +201,7 @@ class AbstractSelectionStrategy(ABC):
         """
         test_dataset.split_query_meta(self.config['seed'])
 
-        match self.config['CDM']:
-            case 'impact':
-                self.CDM.model.R = test_dataset.log_tensor
-                self.CDM.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
-                self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
-                self.CDM.initialize_test_users(test_dataset)
-
-          # split valid query qnd meta set one and for all epochs
+        self.CDM.init_test(test_dataset)
 
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],

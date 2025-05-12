@@ -1,6 +1,6 @@
 import logging
 import warnings
-
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils import data
 import itertools
 import numpy as np
@@ -479,45 +479,60 @@ class QueryEnv:
     
     def step_support_len(self,t):
         return self.support_len - t
+    
 
     def load_batch(self, batch):
         """
         Adapt the data container to the new batch of users by limiting the access to the only part of the container which have been refilled (to execute at every batch)
         """
 
-        self._current_batch_size = len(batch)
+        B = len(batch)
+        # unpack lists of tensors
+        sq_list     = [b['sq']     for b in batch]
+        sl_list     = [b['sl']     for b in batch]
+        sc_nb_list  = [b['sc_nb']  for b in batch]
+        sc2_list    = [b['sc'].view(-1, self.cq_max)     for b in batch]
+        scm2_list   = [b['sc_mask'].view(-1, self.cq_max) for b in batch]
+        mq_list     = [b['mq']     for b in batch]
+        ml_list     = [b['ml']     for b in batch]
+        mc_nb_list  = [b['mc_nb']  for b in batch]
+        mc2_list    = [b['mc'].view(-1, self.cq_max)     for b in batch]
+        mcm2_list   = [b['mc_mask'].view(-1, self.cq_max) for b in batch]
+        users       = torch.tensor([b['u_idx'] for b in batch],
+                                   device=self.device, dtype=torch.long)
+
+        # pad everything in one shot
+        SQ    = pad_sequence(sq_list,    batch_first=True, padding_value=0)
+        SL    = pad_sequence(sl_list,    batch_first=True, padding_value=0)
+        SCNB  = pad_sequence(sc_nb_list, batch_first=True, padding_value=0)
+        SC    = pad_sequence(sc2_list,   batch_first=True, padding_value=-1).reshape(B, -1)
+        SCM   = pad_sequence(scm2_list,  batch_first=True, padding_value=False).reshape(B, -1)
+
+        MQ    = pad_sequence(mq_list,    batch_first=True, padding_value=0)
+        ML    = pad_sequence(ml_list,    batch_first=True, padding_value=0)
+        MCNB  = pad_sequence(mc_nb_list, batch_first=True, padding_value=0)
+        MC    = pad_sequence(mc2_list,   batch_first=True, padding_value=-1).reshape(B, -1)
+        MCM   = pad_sequence(mcm2_list,  batch_first=True, padding_value=False).reshape(B, -1)
+
+        # now bulk‐write into your pre‐allocated buffers
+        self._current_batch_size = B
+        self._support_len     [:B] = torch.tensor([v.size(0) for v in sq_list], device=self.device)
+        self._support_users_vec[:B] = users
+        self._support_questions[:B,:SQ.size(1)] = SQ
+        self._support_responses[:B,:SL.size(1)] = SL
+        self._support_cat_nb  [:B,:SCNB.size(1)] = SCNB
+        self._support_cat     [:B,:SC .size(1)] = SC
+        self._support_cat_mask[:B,:SCM.size(1)] = SCM
+
+        self._meta_users     [:B] = users.unsqueeze(1).expand(-1, ML.size(1))
+        self._meta_questions [:B,:MQ.size(1)] = MQ
+        self._meta_responses [:B,:ML.size(1)] = ML
+        self._meta_cat_nb    [:B,:MCNB.size(1)] = MCNB
+        self._meta_cat       [:B,:MC .size(1)] = MC
+        self._meta_cat_mask  [:B,:MCM.size(1)] = MCM
+
+        # reset submitted‐logs counter
         self._current_charged_log_nb = 0
-        self._support_indices[:self.current_batch_size,:] = torch.arange(0, self.sup_max, device=self.device, dtype=torch.long).repeat(self.current_batch_size,
-                                                                                                      1)
-
-        for i, b in enumerate(batch):
-            (u, sq, sl, sc, sc_mask, sc_nb, mq, ml, mc, mc_mask, mc_nb) = b.values()
-
-            ### ----- Support questions
-            # Number of support questions for the current user
-            n = sq.shape[0]
-            self._support_len[i] = n
-            self._support_users_vec[i] = u
-
-            # Saving logs questions, responses and number of categories
-            self._support_questions[i, :n] = sq
-            self._support_responses[i, :n] = sl
-            self._support_cat_nb[i, :n] = sc_nb
-
-            # Saving the categories associated to each question and their mask
-            self._support_cat[i, :sc.shape[0]] = sc
-            self._support_cat_mask[i, :sc.shape[0]] = sc_mask
-
-            ### ----- Meta questions
-            # Saving meta users, questions, responses and number of categories
-            self._meta_users[i] = torch.full(mq.shape, u, dtype=torch.long, device=self.device)
-            self._meta_questions[i] = mq
-            self._meta_responses[i] = ml
-            self._meta_cat_nb[i] = mc_nb
-
-            # Saving the categories associated to each question and their mask
-            self._meta_cat[i, :mc.shape[0]] = mc
-            self._meta_cat_mask[i, :mc.shape[0]] = mc_mask
 
 
 
