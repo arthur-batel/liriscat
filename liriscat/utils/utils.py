@@ -1,6 +1,6 @@
 import json
 from turtledemo.forest import start
-
+import gc
 import numba
 import numpy as np
 import torch
@@ -16,7 +16,10 @@ import sys
 from datetime import datetime
 
 from sklearn.metrics import roc_auc_score
-
+from IMPACT import dataset
+from IMPACT import model
+from ipyparallel import Client
+from functools import partial
 
 def setuplogger(verbose: bool = True, debug: bool=False, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
@@ -793,3 +796,117 @@ def micro_ave_auc(y_true, y_pred):
     y_pred = y_pred.cpu().int().numpy()
     roc_auc = roc_auc_score(y_true.ravel(), y_pred.ravel(), average='micro')
     return torch.tensor(roc_auc)
+
+
+def prepare_dataset(config: dict, i_fold:int=0) :
+    """
+    Prepare the dataset for training, validation, and testing.
+
+    Args:
+        config (dict): Configuration dictionary containing dataset name and other parameters.
+        i_fold (int): Fold number for cross-validation. Default is 0.
+
+    Returns:
+        tuple: A tuple containing:
+            - concept_map (dict): A dictionary mapping question IDs to lists of category IDs.
+            - train_data (LoaderDataset): Training dataset.
+            - valid_data (LoaderDataset): Validation dataset.
+            - test_data (LoaderDataset): Testing dataset.
+    """
+    ## Concept map format : {question_id : [category_id1, category_id2, ...]}
+    concept_map = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_concept_map.json', 'r'))
+    concept_map = {int(k): [int(x) for x in v] for k, v in concept_map.items()}
+    nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl', weights_only=True)
+
+
+    ## Metadata map format : {"num_user_id": ..., "num_item_id": ..., "num_dimension_id": ...}
+    metadata = json.load(open(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_metadata.json', 'r'))
+
+    ## Quadruplets format : (user_id, question_id, response, category_id)
+    train = pd.read_csv(
+        f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_fold}.csv',
+        encoding='utf-8').to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
+                                                                 "dimension_id": int})
+    valid = pd.read_csv(
+        f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_fold}.csv',
+        encoding='utf-8').to_records(index=False, column_dtypes={'student_id': int, 'item_id': int, "correct": float,
+                                                                 "dimension_id": int})
+
+    train_data = dataset.LoaderDataset(train, concept_map, metadata, nb_modalities)
+    valid_data = dataset.LoaderDataset(valid, concept_map, metadata, nb_modalities)
+
+    return train_data, valid_data
+
+def IMPACT_pre_train(trial, config, train_data, valid_data):
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 9,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] = 12
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+def launch_test(trial,train_data,valid_data,config) :
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    algo = model.IMPACT(**config)
+
+    # Init model
+    algo.init_model(train_data, valid_data)
+
+    # train model ----
+    algo.train(train_data, valid_data)
+
+    best_valid_metric = algo.best_valid_metric
+
+    logging.info("-------Trial number : "+str(trial.number)+"\nBest epoch : "+str(algo.best_epoch)+"\nValues : ["+str(best_valid_metric)+"]\nParams : "+str(trial.params))
+
+    del algo.model
+    del algo
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return best_valid_metric
+
+
+def objective_hps(trial, config, train_data, valid_data):
+    rc = Client()
+    rc[:].use_dill()
+    lview = rc.load_balanced_view()
+    lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-7, 1e-5, log=True)
+    #num_responses = trial.suggest_int('num_responses', 11,13)
+
+    config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] =12
+    launch_test_var = partial(launch_test, train_data=train_data, valid_data=valid_data, config=config)
+
+    return lview.apply_async(launch_test_var,trial).get()
