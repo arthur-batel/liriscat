@@ -175,10 +175,8 @@ class AbstractSelectionStrategy(ABC):
 
                 valid_query_env.update(actions, t)
 
-            with torch.enable_grad():
-                self.CDM.model.train()
-                self.CDM.update_users(valid_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
-                self.CDM.model.eval()
+                self.update_users(valid_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
+
 
             preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
             total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
@@ -199,6 +197,8 @@ class AbstractSelectionStrategy(ABC):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
+        logging.debug("-- evaluate test --")
+        
         test_dataset.split_query_meta(self.config['seed'])
 
         self.CDM.init_test(test_dataset)
@@ -224,15 +224,10 @@ class AbstractSelectionStrategy(ABC):
                 # Select the action (question to submit)
                 options = test_query_env.get_query_options(t)
                 actions = self.select_action(options)
-
                 test_query_env.update(actions, t)
 
-                with torch.enable_grad():
-                    self.CDM.model.train()
-                    self.CDM.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
-                    self.CDM.model.eval()
-
-
+                self.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
+                    
                 preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
                 pred_list[t].append(preds)
@@ -251,6 +246,9 @@ class AbstractSelectionStrategy(ABC):
         return results_pred, results_profiles
 
     def init_models(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
+
+        logging.debug("-- Initialize CDM and Selection strategy--")
+        
         match self.config['CDM']:
             case 'impact':
                 self.CDM.init_model(train_dataset, valid_dataset)
@@ -273,6 +271,83 @@ class AbstractSelectionStrategy(ABC):
             self.model.to(self.config['device'])
         else:
             print("Warning: self.model is a function and cannot be moved to device")
+
+    def update_users(self,query_data, meta_data, meta_labels) :
+        with torch.enable_grad():
+            logging.debug("- Update users ")
+            self.CDM.model.train()
+            m_user_ids, m_question_ids, m_category_ids = meta_data
+    
+            data = dataset.SubmittedDataset(query_data)
+            dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
+    
+            user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
+                                                          lr=self.CDM.config[
+                                                              'inner_user_lr'])  # todo : Decide How to use a scheduler
+    
+            user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
+    
+            n_batches = len(dataloader)
+    
+            for t in range(self.CDM.config['num_inner_users_epochs']) :
+    
+                sum_loss_0 = 0
+                sum_loss_1 = 0
+                sum_acc_0 = 0
+                sum_acc_1 = 0
+                sum_meta_acc = 0
+                sum_meta_loss = 0
+    
+                for batch in dataloader:
+                    user_ids = batch["user_ids"]
+                    question_ids = batch["question_ids"]
+                    labels = batch["labels"]
+                    category_ids = batch["category_ids"]
+    
+                    self.CDM.model.eval()
+                    
+                    preds = self.CDM.model(user_ids, question_ids, category_ids)
+                    sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
+    
+                    meta_preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+    
+                    self.CDM.model.train()
+    
+                    user_params_optimizer.zero_grad()
+    
+                    with torch.amp.autocast('cuda'):
+                        loss = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
+                        sum_loss_0 += loss.item()
+
+                    user_params_scaler.scale(loss).backward()
+                    user_params_scaler.step(user_params_optimizer)
+                    user_params_scaler.update()
+    
+                    with torch.amp.autocast('cuda'):
+                        loss2 = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
+                        sum_loss_1 += loss2.item()
+    
+                    self.CDM.model.eval()
+    
+                    preds = self.CDM.model(user_ids, question_ids, category_ids)
+    
+                    self.CDM.model.train()
+                    sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
+                    sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
+                    
+                with torch.amp.autocast('cuda'):
+                    meta_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
+                    sum_meta_loss += meta_loss.item()
+                    
+                logging.debug(
+                    f'inner epoch {t} - query loss_0 : {sum_loss_0/n_batches:.5f} '
+                    f'- query loss_1 : {sum_loss_1/n_batches:.5f} '
+                    f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
+                    f'- query acc 1 : {sum_acc_1/n_batches:.5f} '
+                    f'- meta acc 0 : {sum_meta_acc/n_batches:.5f}'
+                    f'- meta loss 1 : {sum_meta_loss:.5f}'
+                )
+            self.CDM.model.eval()
 
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
 
@@ -354,7 +429,7 @@ class AbstractSelectionStrategy(ABC):
 
                     train_query_env.update(actions, i_query)
 
-                    self.CDM.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
+                    self.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
                     self.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
                 self.CDM.update_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
