@@ -21,18 +21,24 @@ from IMPACT import model
 from ipyparallel import Client
 from functools import partial
 
-def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
+def setuplogger(verbose: bool = True, debug: bool=False, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
 
     if os == 'Windows':
         root = logging.getLogger()
-        if verbose:
+        
+        if debug : 
+            root.setLevel(logging.DEBUG)
+        elif verbose:
             root.setLevel(logging.INFO)
         else:
             root.setLevel(logging.ERROR)
 
         # Stream handler for console output
         stream_handler = logging.StreamHandler(sys.stdout)
-        if verbose:
+        
+        if debug : 
+            stream_handler.setLevel(logging.DEBUG)
+        elif verbose:
             stream_handler.setLevel(logging.INFO)
         else:
             stream_handler.setLevel(logging.ERROR)
@@ -50,7 +56,9 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
             time_str = now.strftime("_%d-%m-%y_%S-%M")
             file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
 
-            if verbose:
+            if debug : 
+                file_handler.setLevel(logging.DEBUG)
+            elif verbose:
                 file_handler.setLevel(logging.INFO)
             else:
                 file_handler.setLevel(logging.ERROR)
@@ -61,14 +69,18 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
         root.addHandler(stream_handler)
     elif os == 'Linux':
         root = logging.getLogger()
-        if verbose:
+        if debug : 
+            root.setLevel(logging.DEBUG)
+        elif verbose:
             root.setLevel(logging.INFO)
         else:
             root.setLevel(logging.ERROR)
 
         # Stream handler for console output
         stream_handler = logging.StreamHandler(sys.stdout)
-        if verbose:
+        if debug : 
+            stream_handler.setLevel(logging.DEBUG)
+        elif verbose:
             stream_handler.setLevel(logging.INFO)
         else:
             stream_handler.setLevel(logging.ERROR)
@@ -86,7 +98,9 @@ def setuplogger(verbose: bool = True, log_path: str = "../../experiments/logs/",
             time_str = now.strftime("_%d:%m:%y_%S:%M")
             file_handler = logging.FileHandler(log_path + log_name + time_str + ".log")
 
-            if verbose:
+            if debug : 
+                file_handler.setLevel(logging.DEBUG)
+            elif verbose:
                 file_handler.setLevel(logging.INFO)
             else:
                 file_handler.setLevel(logging.ERROR)
@@ -102,6 +116,7 @@ def set_seed(seed):
     random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
+        torch.use_deterministic_algorithms(True)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
@@ -408,7 +423,7 @@ def compute_pc_er(emb, test_data):
     U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
                                                                                  non_blocking=True)
 
-    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False)
+    data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False, num_workers=0)
     for data_batch in data_loader:
         user_ids = data_batch[:, 0].long()
         item_ids = data_batch[:, 1].long()

@@ -7,7 +7,7 @@ import numba
 import numpy as np
 from itertools import chain
 from stat import S_IREAD
-from IMPACT.model.IMPACT import resp_to_mod
+
 from sklearn.metrics import roc_auc_score
 from torch.cuda import device
 from torch.utils.data import DataLoader
@@ -161,7 +161,9 @@ class AbstractSelectionStrategy(ABC):
 
         logging.debug("-- evaluate valid --")
 
-        for _ in valid_loader:
+        for batch in valid_loader:
+
+            valid_query_env.load_batch(batch)
 
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = valid_query_env.generate_IMPACT_meta()
@@ -190,6 +192,7 @@ class AbstractSelectionStrategy(ABC):
         mean_loss = torch.mean(torch.stack(loss_list))
 
         return mean_loss, self.valid_metric(pred_tensor, label_tensor)
+    
 
     @evaluation_state
     def evaluate_test(self, test_dataset: dataset.EvalDataset):
@@ -198,25 +201,20 @@ class AbstractSelectionStrategy(ABC):
         """
         test_dataset.split_query_meta(self.config['seed'])
 
-        match self.config['CDM']:
-            case 'impact':
-                self.CDM.model.R = test_dataset.log_tensor
-                self.CDM.model.ir_idx = resp_to_mod(self.CDM.model.R, self.CDM.model.nb_modalities)
-                self.CDM.model.ir_idx = self.CDM.model.ir_idx.to(self.device, non_blocking=True)
-                self.CDM.initialize_test_users(test_dataset)
-
-          # split valid query qnd meta set one and for all epochs
+        self.CDM.init_test(test_dataset)
 
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
-                                      shuffle=False, pin_memory=False)
+                                      shuffle=False, pin_memory=False, num_workers=0)
 
         pred_list = {t : [] for t in range(self.config['n_query'])}
         label_list = {t : [] for t in range(self.config['n_query'])}
         emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
         log_idx = 0
-        for _ in test_loader: #User collate directly modify the query environment
+        for batch in test_loader:
+
+            test_query_env.load_batch(batch)
 
             # Prepare the meta set
             m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
@@ -224,7 +222,8 @@ class AbstractSelectionStrategy(ABC):
             for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
                 # Select the action (question to submit)
-                actions = self.select_action(test_query_env.get_query_options(t))
+                options = test_query_env.get_query_options(t)
+                actions = self.select_action(options)
 
                 test_query_env.update(actions, t)
 
@@ -238,7 +237,7 @@ class AbstractSelectionStrategy(ABC):
 
                 pred_list[t].append(preds)
                 label_list[t].append(m_labels)
-                emb_tensor[log_idx:log_idx+test_query_env.current_batch_size, t, :] = self.CDM.get_user_emb()[test_query_env.query_users_vec, :]
+                emb_tensor[log_idx:log_idx+test_query_env.current_batch_size, t, :] = self.CDM.get_user_emb()[test_query_env.support_users_vec, :]
 
             log_idx += test_query_env.current_batch_size
 
@@ -327,11 +326,11 @@ class AbstractSelectionStrategy(ABC):
         valid_query_env = QueryEnv(valid_dataset, self.device, self.config['valid_batch_size'])
 
         train_loader = DataLoader(dataset=train_dataset, collate_fn=UserCollate(train_query_env), batch_size=self.config['batch_size'],
-                                  shuffle=True, pin_memory=True)
+                                  shuffle=True, pin_memory=True, num_workers=0)
 
         valid_loader = DataLoader(dataset=valid_dataset, collate_fn=UserCollate(valid_query_env),
                                   batch_size=self.config['valid_batch_size'],
-                                  shuffle=False, pin_memory=True)
+                                  shuffle=False, pin_memory=True, num_workers=0)
 
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
@@ -340,9 +339,11 @@ class AbstractSelectionStrategy(ABC):
 
             train_dataset.set_query_seed(ep) # changes the meta and query set for each epoch
 
-            for u_batch,_ in enumerate(train_loader): # UserCollate directly load the data into the query environment
+            for u_batch,batch in enumerate(train_loader): # UserCollate directly load the data into the query environment
                 
                 logging.debug(f'----- User batch : {u_batch}')
+
+                train_query_env.load_batch(batch)
                 m_user_ids, m_question_ids, m_labels, m_category_ids = train_query_env.generate_IMPACT_meta()
 
                 for i_query in range(self.config['n_query']):
