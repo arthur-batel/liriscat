@@ -36,11 +36,6 @@ class CATIMPACT(IMPACT) :
     def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
 
-
-        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'])
-
-        self.params_scaler = torch.amp.GradScaler(self.config['device'])
-
     def get_regularizer_with_pior(self):
         A = (self.model.users_emb.weight - self.model.prior_mean) 
         S = self.model.prior_cov_inv
@@ -51,19 +46,7 @@ class CATIMPACT(IMPACT) :
     def get_params(self):
         return self.model.state_dict()
 
-    def update_params(self,user_ids, question_ids, labels, categories) :
-        logging.debug("- Update params : ")
-        
-        for t in range(self.config['num_inner_epochs']) :
 
-            self.params_optimizer.zero_grad()
-
-            with torch.amp.autocast('cuda'):
-                loss = self._compute_loss(user_ids, question_ids, categories, labels)
-
-            self.params_scaler.scale(loss).backward()
-            self.params_scaler.step(self.params_optimizer)
-            self.params_scaler.update()
 
     def init_test(self, test_data):
         self.model.R = test_data.log_tensor
