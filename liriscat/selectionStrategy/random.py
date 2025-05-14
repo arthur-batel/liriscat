@@ -12,6 +12,7 @@ class Random(AbstractSelectionStrategy):
         self.model = RandomModel()
         logging.info(self.name)
         self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
+        self.trainable = False
 
     def select_action(self,options_dict):
 
@@ -22,19 +23,8 @@ class Random(AbstractSelectionStrategy):
         return remove_indices
 
     def _loss_function(self,user_ids, question_ids, categories, labels):
-        return None
+        return torch.tensor([0.1], requires_grad = True)
 
-    def update_params(self,user_ids, question_ids, labels, categories):
-        # self.optimizer.zero_grad()
-        #
-        # with torch.amp.autocast('cuda'):
-        #     loss = self._loss_function(user_ids, question_ids, categories, labels)
-        #
-        # self.scaler.scale(loss).backward()
-        # self.scaler.step(self.optimizer)
-        # self.scaler.update()
-
-        pass
 
     def get_params(self):
         warnings.warn('get_params() Notimplemented')
