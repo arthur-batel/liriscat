@@ -33,14 +33,8 @@ class CATIMPACT(IMPACT) :
 
     def __init__(self, **config):
         super().__init__(**config)
-
     def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
-
-
-        self.params_optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['inner_lr'])
-
-        self.params_scaler = torch.amp.GradScaler(self.config['device'])
 
     def get_regularizer_with_pior(self):
         A = (self.model.users_emb.weight - self.model.prior_mean) 
@@ -52,19 +46,7 @@ class CATIMPACT(IMPACT) :
     def get_params(self):
         return self.model.state_dict()
 
-    def update_params(self,user_ids, question_ids, labels, categories) :
-        logging.debug("- Update params : ")
-        
-        for t in range(self.config['num_inner_epochs']) :
 
-            self.params_optimizer.zero_grad()
-
-            with torch.amp.autocast('cuda'):
-                loss = self._compute_loss(user_ids, question_ids, categories, labels)
-
-            self.params_scaler.scale(loss).backward()
-            self.params_scaler.step(self.params_optimizer)
-            self.params_scaler.update()
 
     def init_test(self, test_data):
         self.model.R = test_data.log_tensor
@@ -94,85 +76,36 @@ class CATIMPACT(IMPACT) :
         self.model.get_regularizer = functools.partial(self.get_regularizer_with_pior)
 
 
-    def update_users(self,query_data, meta_data, meta_labels) :
-        logging.debug("- Update users ")
-        m_user_ids, m_question_ids, m_category_ids = meta_data
+    def _compute_loss(self, users_id, items_id, concepts_id, labels):
+        device = self.config['device']
+        beta = 0.5
 
-        data = dataset.SubmittedDataset(query_data)
-        dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
+        lambda_param = self.config['lambda']
 
-        user_params_optimizer = torch.optim.Adam(self.model.users_emb.parameters(),
-                                                      lr=self.config[
-                                                          'inner_user_lr'])  # todo : Decide How to use a scheduler
+        u_emb, im_emb_prime, i0_emb_prime, in_emb_prime, W_t = self.model.get_embeddings(users_id, items_id,
+                                                                                         concepts_id)
 
-        user_params_scaler = torch.amp.GradScaler(self.config['device'])
+        L1, L2, L3 = self.loss(u_emb=u_emb, im_emb_prime=im_emb_prime, i0_emb_prime=i0_emb_prime,
+                                 in_emb_prime=in_emb_prime, W_t=W_t,
+                                 modalities_idx=self.model.ir_idx[users_id, items_id],
+                                 nb_mod_max_plus_sent=self.model.nb_mod_max_plus_sent,
+                                 diff_mask=self.model.diff_mask[items_id],
+                                 diff_mask2=self.model.diff_mask2[items_id],
+                                 users_id=users_id, items_id=items_id,
+                                 concepts_id=concepts_id, R=self.model.R, users_emb=self.model.users_emb.weight)
 
-        n_batches = len(dataloader)
+        R = self.model.get_regularizer()
 
-        for t in range(self.config['num_inner_users_epochs']) :
+        # Stack losses into a tensor
+        losses = torch.stack([L1, L3])  # Shape: (4,)
 
-            sum_loss_0 = 0
-            sum_loss_1 = 0
-            sum_acc_0 = 0
-            sum_acc_1 = 0
-            sum_meta_acc = 0
-            sum_meta_loss = 0
+        # Update statistics and compute weights
+        weights = self.L_W.compute_weights(losses)
 
-            for batch in dataloader:
-                user_ids = batch["user_ids"]
-                question_ids = batch["question_ids"]
-                labels = batch["labels"]
-                category_ids = batch["category_ids"]
+        # Compute total loss
+        total_loss = 1*L1 + lambda_param * R
 
-                self.model.eval()
-                
-                preds = self.model(user_ids, question_ids, category_ids)
-                sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
-
-                meta_preds = self.model(m_user_ids, m_question_ids, m_category_ids)
-
-                self.model.train()
-
-                user_params_optimizer.zero_grad()
-
-                with torch.amp.autocast('cuda'):
-                    loss = self._compute_loss(user_ids, question_ids, labels, category_ids)
-                    sum_loss_0 += loss.item()
-
-
-                # loss.backward()
-                # user_params_optimizer.step()
-                user_params_scaler.scale(loss).backward()
-                user_params_scaler.step(user_params_optimizer)
-                user_params_scaler.update()
-
-                with torch.amp.autocast('cuda'):
-                    loss2 = self._compute_loss(user_ids, question_ids, labels, category_ids)
-                    sum_loss_1 += loss2.item()
-
-                
-
-                self.model.eval()
-
-                preds = self.model(user_ids, question_ids, category_ids)
-
-                self.model.train()
-                sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
-                sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
-                
-            with torch.amp.autocast('cuda'):
-                meta_loss = self._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
-                sum_meta_loss += meta_loss.item()
-
-                
-            logging.debug(
-                f'inner epoch {t} - query loss_0 : {sum_loss_0/n_batches:.5f} '
-                f'- query loss_1 : {sum_loss_1/n_batches:.5f} '
-                f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
-                f'- query acc 1 : {sum_acc_1/n_batches:.5f} '
-                f'- meta acc 0 : {sum_meta_acc/n_batches:.5f}'
-                f'- meta loss 1 : {sum_meta_loss:.5f}'
-            )
+        return total_loss
 
 
     def get_KLI(self, query_data) :

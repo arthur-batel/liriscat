@@ -17,8 +17,8 @@ class KLI(AbstractSelectionStrategy):
         self.CDM.get_KLI(env.get_query_options(t))
 
         # Generate random indices efficiently
-        remove_indices = torch.randint(t, env.query_len.max(), size=env.query_len.shape, device=self.device)
-        remove_indices = torch.remainder(remove_indices, env.query_len - t) + t
+        remove_indices = torch.randint(t, env.support_len.max(), size=env.support_len.shape, device=self.device)
+        remove_indices = torch.remainder(remove_indices, env.support_len - t) + t
 
         return remove_indices
 
