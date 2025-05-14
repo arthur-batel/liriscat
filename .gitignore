@@ -9,6 +9,7 @@ experiment/datasets/data_utils/__pycache__/
 experiments/datasets/1-raw_data/
 experiments/datasets/2-preprocessed_data/
 experiment/logs/*
+experiment/data/*
 experiments/tensorboard/
 build/
 dist/
