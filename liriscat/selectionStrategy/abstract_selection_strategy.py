@@ -464,8 +464,8 @@ class AbstractSelectionStrategy(ABC):
                     train_query_env.update(actions, i_query)
 
                     self.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
-                    self.update_S_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
-
+                    
+                self.update_S_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
                 self.update_CDM_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
             # Early stopping
