@@ -66,7 +66,8 @@ class CATIMPACT(IMPACT) :
         E = torch.normal(ave.expand(test_data.n_actual_users, -1), std.expand(test_data.n_actual_users, -1)/2)
         E = E - E.mean(dim=0) + ave
 
-        self.model.users_emb.weight.data[list(test_data.users_id), :] = E.to(self.config['device'])
+        E = E.to(self.config['device']).requires_grad_()
+        self.model.users_emb.weight.data[list(test_data.users_id), :] = E
 
         cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
