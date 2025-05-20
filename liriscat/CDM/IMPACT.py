@@ -65,7 +65,7 @@ class CATIMPACT(IMPACT) :
         test_users = list(set(torch.arange(train_data.n_users).tolist()) - train_data.users_id - valid_data.users_id)
         
         # NO data leak to test dataset because we only look at the train and valid users 
-        user_embeddings = self.model.users_emb(train_valid_users).float()
+        user_embeddings = self.model.users_emb(train_valid_users).float().detach()
         
         ave = user_embeddings.mean(dim=0)
         std = user_embeddings.std(dim=0)
@@ -73,7 +73,7 @@ class CATIMPACT(IMPACT) :
         E = torch.normal(ave.expand(train_data.n_users, -1), std.expand(train_data.n_users, -1)/2)
         E = E - E.mean(dim=0) + ave
         with torch.no_grad():
-            self.model.users_emb.weight.copy_(E.to(self.config['device']))
+            self.model.users_emb.weight[:] = E.to(self.config['device'])
 
         cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
