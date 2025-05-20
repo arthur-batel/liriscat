@@ -166,16 +166,15 @@ class AbstractSelectionStrategy(ABC):
                     category_ids = batch["category_ids"]
     
                     self.CDM.model.eval()
-                    
-                    preds = self.CDM.model(user_ids, question_ids, category_ids)
-                    sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
-    
-                    meta_preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+                    with torch.no_grad() :                    
+                        preds = self.CDM.model(user_ids, question_ids, category_ids)
+                        sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
+
+                        meta_preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
     
                     self.CDM.model.train()
-    
                     user_params_optimizer.zero_grad()
-    
+                    
                     with torch.amp.autocast('cuda'):
                         loss = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
                         sum_loss_0 += loss.item()
@@ -183,22 +182,20 @@ class AbstractSelectionStrategy(ABC):
                     user_params_scaler.scale(loss).backward()
                     user_params_scaler.step(user_params_optimizer)
                     user_params_scaler.update()
-    
-                    with torch.amp.autocast('cuda'):
+
+                    self.CDM.model.eval()
+                    with torch.no_grad(), torch.amp.autocast('cuda'):
                         loss2 = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
                         sum_loss_1 += loss2.item()
     
-                    self.CDM.model.eval()
-    
                     preds = self.CDM.model(user_ids, question_ids, category_ids)
     
-                    self.CDM.model.train()
                     sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
                     sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
                     
-                with torch.amp.autocast('cuda'):
-                    meta_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
-                    sum_meta_loss += meta_loss.item()
+                    with torch.no_grad(),torch.amp.autocast('cuda') :
+                        meta_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
+                        sum_meta_loss += meta_loss.item()
                     
                 logging.debug(
                     f'inner epoch {t} - query loss_0 : {sum_loss_0/n_batches:.5f} '
@@ -307,6 +304,8 @@ class AbstractSelectionStrategy(ABC):
         
         test_dataset.split_query_meta(self.config['seed'])
 
+        assert self.CDM.initialized_users_prior, \
+            f'Users\' embedding and CDM regularization need to be initialized with the aposteriori distribution.'
         self.CDM.init_test(test_dataset)
 
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
@@ -333,8 +332,9 @@ class AbstractSelectionStrategy(ABC):
                 test_query_env.update(actions, t)
 
                 self.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
-                    
-                preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+
+                with torch.no_grad() :
+                    preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
                 pred_list[t].append(preds)
                 label_list[t].append(m_labels)
@@ -410,6 +410,9 @@ class AbstractSelectionStrategy(ABC):
         self.CDM_optimizer = torch.optim.Adam(self.CDM.model.parameters(), lr=self.config['inner_lr'])
         self.CDM_scaler = torch.amp.GradScaler(self.config['device'])
 
+        # self.meta_optimizer = torch.optim.Adam(self.CDM.model.parameters(), lr=self.config['inner_lr'])
+        # self.CDM_scaler = torch.amp.GradScaler(self.config['device'])
+
         self.model.train()
         self.CDM.model.train()
 
@@ -472,8 +475,8 @@ class AbstractSelectionStrategy(ABC):
             if (ep + 1) % eval_freq == 0:
                 with torch.no_grad(), torch.amp.autocast('cuda'):
                     valid_loss, valid_metric = self.evaluate_valid(valid_loader, valid_query_env)
-
-                    logging.info(f'{valid_metric}, {valid_loss}')
+                    valid_loss, valid_metric = 8,5
+                    logging.info(f'valid_metric : {valid_metric}, valid_loss : {valid_loss}')
 
                     with warnings.catch_warnings(record=True) as w:
                         warnings.simplefilter("always")
