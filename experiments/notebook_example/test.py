@@ -11,9 +11,7 @@ import gc
 import json
 import torch
 liriscat.utils.set_seed(0)
-import pandas as pd
-from importlib import reload
-import IMPACT
+
 import warnings
 import os
 import pickle
