@@ -39,6 +39,7 @@ class AbstractSelectionStrategy(ABC):
         self._trained = False
         self.fold = 0
         self.trainable = True
+        self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
 
         if self.config['verbose_early_stopping']:
             # Decide on the early stopping criterion
@@ -469,13 +470,13 @@ class AbstractSelectionStrategy(ABC):
                     self.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
                     
                 self.update_S_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
-                self.update_CDM_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
+                #self.update_CDM_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
             # Early stopping
             if (ep + 1) % eval_freq == 0:
                 with torch.no_grad(), torch.amp.autocast('cuda'):
                     valid_loss, valid_metric = self.evaluate_valid(valid_loader, valid_query_env)
-                    valid_loss, valid_metric = 8,5
+
                     logging.info(f'valid_metric : {valid_metric}, valid_loss : {valid_loss}')
 
                     with warnings.catch_warnings(record=True) as w:
@@ -493,6 +494,13 @@ class AbstractSelectionStrategy(ABC):
                         break
 
         self.model.load_state_dict(self.best_model_params)
+
+    def reset_rng(self):
+        """
+        Reset the random number generator to a new seed
+        :param seed: new seed
+        """
+        self._rng = torch.Generator(device=self.config['device']).manual_seed(self.config['seed'])
 
 class DummyOptimizer:
     def zero_grad(self): pass
