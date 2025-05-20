@@ -13,7 +13,15 @@ class Random(AbstractSelectionStrategy):
         logging.info(self.name)
         self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
         self.trainable = False
-
+        self.config = config
+        
+    def reset_rng(self):
+        """
+        Reset the random number generator to a new seed
+        :param seed: new seed
+        """
+        self._rng = torch.Generator(device=self.config['device']).manual_seed(self.config['seed'])
+        
     def select_action(self,options_dict):
 
         # Generate random indices efficiently
