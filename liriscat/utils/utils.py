@@ -396,6 +396,108 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
 
     return s / beta
 
+def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+    R1 = np.vstack((R_train, R_valid))
+    R2 = R_test
+    n_train = R_train.shape[0]
+    n_valid = R_valid.shape[0]
+    n_test = R_test.shape[0]
+
+    # Conversion des ensembles en np.ndarray
+    U1 = np.array(list(U1), dtype=np.int64)
+    U2 = np.array(list(U2), dtype=np.int64)
+
+    q1 = {}
+    q2 = {}
+    
+    for r in range(metadata['num_item_id']):
+        q1[r] = []
+        
+    for r in range(metadata['num_item_id']):
+        q2[r] = []
+
+    for u, i in torch.tensor(R1).nonzero():
+        q1[i.item()].append(u.item())
+
+    for u, i in torch.tensor(R2).nonzero():
+        q2[i.item()].append(u.item())
+
+    max_concepts_per_item = 0
+    list_concept_map = []
+    for d in concept_map:
+        list_concept_map.append(concept_map[d])
+        l = len(concept_map[d])
+        if l > max_concepts_per_item:
+            max_concepts_per_item = l
+
+    list_q1 = []
+    list_q1_len = []
+    for key in q1.keys():
+        list_q1.append(q1[key])
+        list_q1_len.append(len(q1[key]))
+
+    list_q2 = []
+    list_q2_len = []
+    for key in q2.keys():
+        list_q2.append(q2[key])
+        list_q2_len.append(len(q2[key]))
+
+    max_q1_len = max(len(q1_i) for q1_i in list_q1)
+    q1_array = _preprocess_list_q(list_q1, max_q1_len)
+    max_q2_len = max(len(q2_i) for q2_i in list_q2)
+    q2_array = _preprocess_list_q(list_q2, max_q2_len)
+
+    concept_map_array = _preprocess_concept_map(list_concept_map, max_concepts_per_item)
+
+    # Convert q_len to a NumPy array
+    q1_len = np.array(list_q1_len, dtype=np.int32)
+    q2_len = np.array(list_q2_len, dtype=np.int32)
+
+    num_dim = metadata['num_dimension_id']
+
+    # Optionally ensure concept indices are in range inside _compute_doa:
+    # You can either filter concept_indices there or ensure _preprocess_concept_map
+    # doesn't produce out-of-range indices.
+
+    U_train_global = np.array(U1[:n_train], dtype=np.int64).reshape(-1)
+    U_valid_global = np.array(U1[n_train:], dtype=np.int64).reshape(-1)
+    U_test_global = np.array(U2, dtype=np.int64).reshape(-1)
+    R = np.vstack((R_train, R_valid, R_test))
+
+    return _compute_doa_train_test(q1_array, q2_array,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train_global, U_valid_global, U_test_global)
+
+
+@numba.jit(nopython=True, cache=True)
+def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train, U_valid, U_test):
+    s = np.zeros((1, num_dim))
+    beta = np.zeros((1, num_dim))
+
+    U1 = np.concatenate((U_train, U_valid))
+    U2 = U_test
+
+    for i in range(len(q1)):
+        concept_indices = concept_map_array[i]
+        concept_indices = concept_indices[(concept_indices >= 0) & (concept_indices < num_dim)]
+        E_i = E[:, concept_indices]
+        q1_i_len = q1_len[i]
+        q2_i_len =q2_len[i]
+        for u_i in range(q1_i_len - 1):
+            u = q1[i, u_i]
+            for v in q2[i, : q2_i_len]:
+                if R[u, i] > R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_i[u, idx] > E_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_i[u, idx] != E_i[v, idx]
+                elif R[u, i] < R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_i[u, idx] < E_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_i[u, idx] != E_i[v, idx]
+
+    for idx in range(num_dim):
+        if beta[0, idx] == 0:
+            beta[0, idx] = 1
+
+    return s / beta
 
 def _preprocess_list_q(list_q, max_len):
     q_array = -np.ones((len(list_q), max_len), dtype=np.int64)  # Initialize with -1 for padding
@@ -416,6 +518,10 @@ def compute_doa(emb: torch.Tensor, test_data):
     return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
                                 test_data.concept_map))
 
+def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+
+    return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map, U1, U2))
+
 
 def compute_pc_er(emb, test_data):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
@@ -425,13 +531,22 @@ def compute_pc_er(emb, test_data):
 
     data_loader = data.DataLoader(test_data, batch_size=1, shuffle=False, num_workers=0)
     for data_batch in data_loader:
-        user_ids = data_batch[:, 0].long()
-        item_ids = data_batch[:, 1].long()
-        labels = data_batch[:, 2]
-        dim_ids = data_batch[:, 3].long()
+        user_ids = data_batch['u_idx'].long()
+        item_ids = data_batch['mq'].long()
+        labels = data_batch['ml']
+        dim_ids = data_batch['mc'].long()
 
-        U_resp_sum[user_ids, dim_ids] += labels
-        U_resp_nb[user_ids, dim_ids] += torch.ones_like(labels)
+        u = user_ids.item()
+        dim_ids = dim_ids.view(-1)
+        labels = labels.view(-1)
+        n = min(dim_ids.shape[0], labels.shape[0])
+
+        for i in range(n):
+            d = dim_ids[i].item()
+            l = labels[i].item()
+            if 0 <= u < U_resp_sum.shape[0] and 0 <= d < U_resp_sum.shape[1]:
+                U_resp_sum[u, d] += l
+                U_resp_nb[u, d] += 1
 
     U_ave = U_resp_sum / U_resp_nb
 
@@ -451,22 +566,18 @@ def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tenso
         c: A 0-dim tensor (scalar) representing the average correlation.
     """
 
-    # Initialize counters as tensors to allow JIT compatibility
-    c = torch.tensor(0.0, device=U_ave.device)
-    s = torch.tensor(0.0, device=U_ave.device)
-
+    n = min(U_ave.shape[0], emb.shape[0])
+    results = []
     for dim in range(concept_n):
-        mask = ~torch.isnan(U_ave[:, dim])
-        U_dim_masked = U_ave[:, dim][mask].unsqueeze(1)
-        Emb_dim_masked = emb[:, dim][mask].unsqueeze(1)
-
-        corr = torch.corrcoef(torch.concat([U_dim_masked, Emb_dim_masked], dim=1).T)[0][1]
-
-        if not torch.isnan(corr):
-            c += corr
-            s += 1
-    c /= s
-    return c
+        mask = ~torch.isnan(U_ave[:n, dim]) & ~torch.isnan(emb[:n, dim])
+        if mask.sum() > 1:
+            U_dim_masked = U_ave[:n, dim][mask]
+            Emb_dim_masked = emb[:n, dim][mask]
+            corr = torch.corrcoef(torch.stack([U_dim_masked, Emb_dim_masked]))[0, 1]
+            results.append(corr)
+    if len(results) == 0:
+        return torch.tensor(float('nan'))
+    return torch.stack(results).nanmean()
 
 
 def compute_rm(emb: torch.Tensor, test_data):
@@ -664,7 +775,7 @@ def reverse_array(arr):
 
 
 @torch.jit.script
-def root_mean_squared_error(y_true, y_pred):
+def root_mean_squared_error(y_true, y_pred, nb_modalities):
     """
     Compute the rmse metric (Regression)
 
@@ -679,7 +790,7 @@ def root_mean_squared_error(y_true, y_pred):
 
 
 @torch.jit.script
-def mean_absolute_error(y_true, y_pred):
+def mean_absolute_error(y_true, y_pred, nb_modalities):
     """
     Compute the mae metric (Regression)
 
@@ -694,7 +805,7 @@ def mean_absolute_error(y_true, y_pred):
 
 
 @torch.jit.script
-def r2(gt, pd):
+def r2(gt, pd, nb_modalities):
     """
     Compute the r2 metric (Regression)
 
@@ -714,9 +825,16 @@ def r2(gt, pd):
 
     return r2
 
+@torch.jit.script
+def round_pred(y_true, y_pred, nb_modalities):
+    nb_modalities = nb_modalities.to(dtype=torch.float32)
+    y_true = torch.round(y_true * (nb_modalities - 1))
+    y_pred = torch.round(y_pred * (nb_modalities - 1))
+    return y_true, y_pred
+
 
 @torch.jit.script
-def micro_ave_accuracy(y_true, y_pred):
+def micro_ave_accuracy(y_true, y_pred, nb_modalities):
     """
     Compute the micro-averaged accuracy (Classification)
 
@@ -727,11 +845,13 @@ def micro_ave_accuracy(y_true, y_pred):
     Returns:
         Tensor: The micro-averaged precision.
     """
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+
     return torch.mean((y_true == y_pred).float())
 
 
 @torch.jit.script
-def micro_ave_precision(y_true, y_pred):
+def micro_ave_precision(y_true, y_pred, nb_modalities):
     """
     Compute the micro-averaged precision (Binary classification)
 
@@ -742,13 +862,18 @@ def micro_ave_precision(y_true, y_pred):
     Returns:
         Tensor: The micro-averaged precision.
     """
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+
     true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
     predicted_positives = torch.sum(y_pred == 2).float()
-    return true_positives / predicted_positives
+    if predicted_positives > 0:
+        return true_positives / predicted_positives
+    else:
+        return torch.tensor(0)
 
 
 @torch.jit.script
-def micro_ave_recall(y_true, y_pred):
+def micro_ave_recall(y_true, y_pred, nb_modalities):
     """
     Compute the micro-averaged recall (Binary classification)
 
@@ -759,29 +884,16 @@ def micro_ave_recall(y_true, y_pred):
     Returns:
         Tensor: The micro-averaged recall.
     """
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+
     true_positives = torch.sum((y_true == 2) & (y_pred == 2)).float()
     actual_positives = torch.sum(y_true == 2).float()
-    return true_positives / actual_positives
+    if actual_positives > 0:
+        return true_positives / actual_positives
+    else:
+        return torch.tensor(0)
 
-
-@torch.jit.script
-def micro_ave_f1(y_true, y_pred):
-    """
-    Compute the micro-averaged f1 (Binary classification)
-
-    Args:
-        y_true (Tensor): Ground truth labels.
-        y_pred (Tensor): Predicted labels.
-
-    Returns:
-        Tensor: The micro-averaged f1.
-    """
-    precision = micro_ave_precision(y_true, y_pred)
-    recall = micro_ave_recall(y_true, y_pred)
-    return 2 * (precision * recall) / (precision + recall)
-
-
-def micro_ave_auc(y_true, y_pred):
+def micro_ave_auc(y_true, y_pred, nb_modalities):
     """
     Compute the micro-averaged roc-auc (Binary classification)
 
@@ -796,6 +908,58 @@ def micro_ave_auc(y_true, y_pred):
     y_pred = y_pred.cpu().int().numpy()
     roc_auc = roc_auc_score(y_true.ravel(), y_pred.ravel(), average='micro')
     return torch.tensor(roc_auc)
+
+def macro_precision(y_true, y_pred, nb_modalities):
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+
+    classes = torch.arange(nb_modalities.max)+1
+    precision_tensor = torch.zeros(len(classes))
+
+    for i,cls in enumerate(classes):
+        true_positives = torch.sum((y_true == cls) & (y_pred == cls)).float()
+        predicted_positives = torch.sum(y_pred == cls).float()
+        if predicted_positives > 0:
+            precision_tensor[i] = true_positives / predicted_positives
+
+    return precision_tensor.mean()
+
+def macro_recall(y_true, y_pred, nb_modalities):
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+
+    classes = torch.arange(nb_modalities.max())+1
+    recall_tensor = torch.zeros(len(classes))
+    for i,cls in enumerate(classes):
+        true_positives = torch.sum((y_true == cls) & (y_pred == cls)).float()
+        actual_positives = torch.sum(y_true == cls).float()
+        if actual_positives > 0:
+            recall_tensor[i] = true_positives / actual_positives
+    print('actual_tensor : '+str(recall_tensor))
+    return recall_tensor.mean()
+
+
+def macro_f_beta(y_true, y_pred, nb_modalities, beta:float=1):
+    y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
+    beta_squared = beta * beta
+    classes = torch.arange(nb_modalities.max())+1
+    f_beta_tensor = torch.zeros(len(classes))
+    for i, cls in enumerate(classes):
+        true_positives = torch.sum((y_true == cls) & (y_pred == cls)).float()
+        predicted_positives = torch.sum(y_pred == cls).float()
+        actual_positives = torch.sum(y_true == cls).float()
+        precision = true_positives / predicted_positives
+        recall = true_positives / actual_positives
+        if predicted_positives > 0 and actual_positives > 0:
+            f_beta_tensor[i] = (1 + beta_squared) * (precision * recall) / (precision + recall)
+
+    print('tensor : ' f'{f_beta_tensor}')
+    return f_beta_tensor.mean()
+
+
+def micro_f_beta(y_true, y_pred, nb_modalities, beta:float=1):
+    beta_squared = beta * beta
+    precision = micro_ave_precision(y_true, y_pred, nb_modalities)
+    recall = micro_ave_recall(y_true, y_pred, nb_modalities)
+    return (1 + beta_squared) * (precision * recall) / (precision + recall)
 
 
 def prepare_dataset(config: dict, i_fold:int=0) :
