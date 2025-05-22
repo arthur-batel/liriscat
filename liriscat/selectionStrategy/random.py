@@ -11,9 +11,9 @@ class Random(AbstractSelectionStrategy):
         super().__init__('Random', metadata, **config)
         self.model = RandomModel()
         logging.info(self.name)
-        self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
         self.trainable = False
-
+        self.config = config
+        
     def select_action(self,options_dict):
 
         # Generate random indices efficiently
