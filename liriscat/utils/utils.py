@@ -327,7 +327,12 @@ def convert_config_to_EduCAT(config, metadata, strategy_name: str, threshold: fl
     config['prednet_len2'] = prednet_len2
 
 
-def evaluate_doa(E, R, metadata, concept_map):
+def evaluate_doa(E, test_data, train_data=None, valid_data=None):
+
+    R = test_data.log_tensor.cpu().numpy()
+    metadata = test_data.metadata
+    concept_map = test_data.concept_map
+    
     q = {}
     for r in range(metadata['num_item_id']):
         q[r] = []
@@ -396,16 +401,22 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
 
     return s / beta
 
-def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+def evaluate_meta_doa(E, test_data,train_data, valid_data):
+    R_train = train_data.log_tensor.cpu().numpy()
+    R_valid = valid_data.log_tensor.cpu().numpy()
+    R_test = test_data.log_tensor.cpu().numpy()
+
+    metadata = train_data.metadata
+    concept_map = train_data.concept_map
+
+    U1 = np.array(list(train_data.users_id.union(valid_data.users_id)))
+    U2 = np.array(list(test_data.users_id))
+
     R1 = np.vstack((R_train, R_valid))
     R2 = R_test
     n_train = R_train.shape[0]
     n_valid = R_valid.shape[0]
     n_test = R_test.shape[0]
-
-    # Conversion des ensembles en np.ndarray
-    U1 = np.array(list(U1), dtype=np.int64)
-    U2 = np.array(list(U2), dtype=np.int64)
 
     q1 = {}
     q2 = {}
@@ -464,11 +475,11 @@ def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, 
     U_test_global = np.array(U2, dtype=np.int64).reshape(-1)
     R = np.vstack((R_train, R_valid, R_test))
 
-    return _compute_doa_train_test(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R, U_train_global,
+    return _compute_meta_doa(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R, U_train_global,
                                    U_valid_global, U_test_global)
 
 @numba.jit(nopython=True, cache=True)
-def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train, U_valid, U_test):
+def _compute_meta_doa(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train, U_valid, U_test):
     s = np.zeros((1, num_dim))
     beta = np.zeros((1, num_dim))
 
@@ -514,15 +525,15 @@ def _preprocess_concept_map(list_concept_map, max_len):
     return concept_map_array
 
 
-def compute_doa(emb: torch.Tensor, test_data):
-    return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
-                                test_data.concept_map))
+def compute_doa(emb: torch.Tensor, test_data, train_data=None, valid_data=None):
+    return np.mean(evaluate_doa(emb.cpu().numpy(), test_data, train_data,
+                                valid_data))
 
-def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+def compute_meta_doa(emb: torch.Tensor, test_data,train_data, valid_data):
 
-    return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map, U1, U2))
+    return np.mean(evaluate_meta_doa(emb.cpu().numpy(), test_data,train_data, valid_data))
 
-def compute_pc_er(emb, test_data):
+def compute_pc_er(emb, test_data, train_data=None, valid_data=None):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
                                                                                   non_blocking=True)
     U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
@@ -579,7 +590,7 @@ def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tenso
     return torch.stack(results).nanmean()
 
 
-def compute_rm(emb: torch.Tensor, test_data):
+def compute_rm(emb: torch.Tensor, test_data, train_data=None, valid_data=None):
     logging.warning("Computing RM on meta and QUERY set")
     concept_array, concept_lens = preprocess_concept_map(test_data.concept_map)
     r = compute_rm_fold(emb.cpu().numpy(), test_data.df.to_records(index=False,

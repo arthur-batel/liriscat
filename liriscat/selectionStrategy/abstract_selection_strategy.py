@@ -72,7 +72,7 @@ class AbstractSelectionStrategy(ABC):
             'pc-er': utils.compute_pc_er,
             'doa': utils.compute_doa,
             'rm': utils.compute_rm,
-            'doa_new': utils.compute_doa_train_test,
+            'meta_doa': utils.compute_meta_doa,
         }
         assert set(self.profile_metrics).issubset(self.profile_metric_functions.keys())
 
@@ -309,7 +309,7 @@ class AbstractSelectionStrategy(ABC):
     
 
     @evaluation_state
-    def evaluate_test(self, test_dataset: dataset.EvalDataset):
+    def evaluate_test(self, test_dataset: dataset.EvalDataset, train_data : dataset.CATDataset=None, valid_data : dataset.CATDataset=None):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
@@ -361,33 +361,15 @@ class AbstractSelectionStrategy(ABC):
         results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]), torch.cat(nb_modalities_list[t])).cpu().item()
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
-        # results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset)
-        #            for metric in self.profile_metrics} for t in range(self.config['n_query'])}
-        results_profiles = {
-            t: {
-                metric: (
-                    self.profile_metric_functions[metric](
-                        emb_tensor[:, t, :],
-                        self.train_data.log_tensor.cpu().numpy(),  # train
-                        self.valid_data.log_tensor.cpu().numpy(),  # valid
-                        test_dataset.log_tensor.cpu().numpy(),  # test
-                        self.metadata,
-                        self.concept_map,
-                        self.U1,
-                        self.U2
-                    )
-                    if metric == "doa_new"
-                    else self.profile_metric_functions[metric](emb_tensor[:, t, :], test_dataset)
-                )
-                for metric in self.profile_metrics
-            }
-            for t in range(self.config["n_query"])
-        }
+        results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset, train_data, valid_data)
+                   for metric in self.profile_metrics} for t in range(self.config['n_query'])}
+
 
         return results_pred, results_profiles
 
     def init_models(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
-
+        self.train_dataset = train_dataset ###
+        self_valid_dataset = valid_dataset ###
         logging.debug("-- Initialize CDM and Selection strategy--")
         
         match self.config['CDM']:
