@@ -143,6 +143,7 @@ class AbstractSelectionStrategy(ABC):
             logging.debug("- Update users ")
             self.CDM.model.train()
             m_user_ids, m_question_ids, m_category_ids = meta_data
+            m_nb_modalities = self.CDM.model.nb_modalities[m_question_ids]
     
             data = dataset.SubmittedDataset(query_data)
             dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
@@ -175,7 +176,7 @@ class AbstractSelectionStrategy(ABC):
       
                     with torch.no_grad() :                    
                         preds = self.CDM.model(user_ids, question_ids, category_ids)
-                        sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
+                        sum_acc_0 += utils.micro_ave_accuracy(labels, preds, nb_modalities)
 
                         meta_preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
 
@@ -198,8 +199,8 @@ class AbstractSelectionStrategy(ABC):
     
                     preds = self.CDM.model(user_ids, question_ids, category_ids)
     
-                    sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
-                    sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
+                    sum_acc_1 += utils.micro_ave_accuracy(labels, preds, nb_modalities)
+                    sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds, m_nb_modalities)
                     
                     with torch.no_grad(),torch.amp.autocast('cuda') :
                         meta_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
