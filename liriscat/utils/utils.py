@@ -409,10 +409,10 @@ def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, 
 
     q1 = {}
     q2 = {}
-    
+
     for r in range(metadata['num_item_id']):
         q1[r] = []
-        
+
     for r in range(metadata['num_item_id']):
         q2[r] = []
 
@@ -464,8 +464,8 @@ def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, 
     U_test_global = np.array(U2, dtype=np.int64).reshape(-1)
     R = np.vstack((R_train, R_valid, R_test))
 
-    return _compute_doa_train_test(q1_array, q2_array,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train_global, U_valid_global, U_test_global)
-
+    return _compute_doa_train_test(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R, U_train_global,
+                                   U_valid_global, U_test_global)
 
 @numba.jit(nopython=True, cache=True)
 def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train, U_valid, U_test):
@@ -521,7 +521,6 @@ def compute_doa(emb: torch.Tensor, test_data):
 def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
 
     return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map, U1, U2))
-
 
 def compute_pc_er(emb, test_data):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
