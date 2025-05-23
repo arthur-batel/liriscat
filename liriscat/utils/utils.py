@@ -136,7 +136,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
                      num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                      i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                     inner_lr: float = 0.0001, inner_user_lr: float = 0.0001,new_users_framework:bool=True, meta_trainer:str='Adam') -> dict:
+                     inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
     if device is None:
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -177,7 +177,6 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'num_inner_epochs': num_inner_epochs,
         "inner_lr": inner_lr,
         "inner_user_lr": inner_user_lr,
-        'new_users_framework':new_users_framework,
         'meta_trainer':meta_trainer,
     }
 
@@ -193,7 +192,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
                        num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                        i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                       inner_lr: float = 0.0001, inner_user_lr: float = 0.0001,new_users_framework:bool=True, meta_trainer:str='Adam') -> dict:
+                       inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
     """
         Generate a configuration dictionary for the model hyperparameter search process.
 
@@ -226,7 +225,6 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
             n_query (int) : Number of question to submit to users. Default is 10.
             CDM (str): Name of the CDM to be used. Default is 'impact'.
             i_fold (int): Fold number for cross-validation. Default is 0.
-            new_users_framework (bool): Whether to use the new users framework (freezing test users embeddings and passing them as arguments of the loss). Default is True.
             meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
         Returns:
             dict: Configuration dictionary with the specified parameters.
@@ -242,7 +240,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                             profile_metrics=profile_metrics,
                             num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
                             num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
-                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,new_users_framework=new_users_framework,meta_trainer=meta_trainer)
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,meta_trainer=meta_trainer)
 
 
 def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
@@ -257,7 +255,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                          profile_metrics: list = ['doa', 'pc-er'],
                          num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                          i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                         inner_lr: float = 0.0001, inner_user_lr: float = 0.0001,new_users_framework:bool=True, meta_trainer:str='Adam') -> dict:
+                         inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
     """
         Generate a configuration dictionary for the model evaluation.
 
@@ -290,7 +288,6 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
             n_query (int) : Number of question to submit to users. Default is 10.
             CDM (str): Name of the CDM to be used. Default is 'impact'.
             i_fold (int): Fold number for cross-validation. Default is 0.
-            new_users_framework (bool): Whether to use the new users framework (freezing test users embeddings and passing them as arguments of the loss). Default is True.
             meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
         Returns:
             dict: Configuration dictionary with the specified parameters.
@@ -306,7 +303,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             profile_metrics=profile_metrics,
                             num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
                             num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
-                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,new_users_framework=new_users_framework,meta_trainer=meta_trainer)
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,meta_trainer=meta_trainer)
 
 
 def convert_config_to_EduCAT(config, metadata, strategy_name: str, threshold: float = None, betas: float = None,
