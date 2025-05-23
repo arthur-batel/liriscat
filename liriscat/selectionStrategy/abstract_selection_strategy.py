@@ -184,23 +184,19 @@ class AbstractSelectionStrategy(ABC):
         self.abstract_inner_loop(query_data, meta_data, take_step)
 
     def Adam_inner_loop(self, query_data, meta_data):
-        user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
-                                                    lr=self.CDM.config[
-                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
-        user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
 
         def take_step(users_id, questions_id, labels, categories_id):
-            user_params_optimizer.zero_grad()
-            if user_params_scaler is not None:
+            self.user_params_optimizer.zero_grad()
+            if self.user_params_scaler is not None:
                 with torch.amp.autocast(device_type='cuda'):
                     loss = self.CDM._compute_loss(users_id, questions_id)
-                user_params_scaler.scale(loss).backward()
-                user_params_scaler.step(user_params_optimizer)
-                user_params_scaler.update()
+                self.user_params_scaler.scale(loss).backward()
+                self.user_params_scaler.step(self.user_params_optimizer)
+                self.user_params_scaler.update()
             else:
                 loss = self.CDM._compute_loss(users_id, questions_id)
                 loss.backward()
-                user_params_optimizer.step()
+                self.user_params_optimizer.step()
             return loss
 
         self.abstract_inner_loop(query_data, meta_data, take_step)
@@ -346,22 +342,44 @@ class AbstractSelectionStrategy(ABC):
         """CATDataset
         Evaluate the model on the given data using the given metrics.
         """
-        logging.debug("-- evaluate test --")
+        logging.debug("-- Evaluate test --")
+
+        # Device cleanup
+        torch.cuda.empty_cache()
+        logging.info('train on {}'.format(self.config['device']))
         
-        test_dataset.split_query_meta(self.config['seed'])
+        # Initialize testing config
+        match self.config['meta_trainer']:
+            case 'GAP':
+                pass
+            case 'Adam':
+                self.user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
+                                                    lr=self.CDM.config[
+                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
+                self.user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
+            case 'none':
+                pass
+            case _:
+                raise ValueError(f"Unknown meta trainer: {self.config['meta_trainer']}")
 
         assert self.CDM.initialized_users_prior, \
             f'Users\' embedding and CDM regularization need to be initialized with the aposteriori distribution.'
+        
+        # Updating CDM to test dataset
         self.CDM.init_test(test_dataset)
 
+        # Dataloaders preperation
+        test_dataset.split_query_meta(self.config['seed'])
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
                                       shuffle=False, pin_memory=False, num_workers=0)
 
+        # Saving metric structures
         pred_list = {t : [] for t in range(self.config['n_query'])}
         label_list = {t : [] for t in range(self.config['n_query'])}
         emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
+        # Test
         log_idx = 0
         for batch in test_loader:
 
@@ -428,20 +446,14 @@ class AbstractSelectionStrategy(ABC):
 
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
 
-        lr = self.config['learning_rate']
-        device = self.config['device']
-
-        torch.cuda.empty_cache()
-
-        logging.info('train on {}'.format(device))
         logging.info("-- START Training --")
 
-        self.best_epoch = 0
-        self.best_valid_loss = float('inf')
-        self.best_valid_metric = self.metric_sign * float('inf')
+        # Device cleanup
+        torch.cuda.empty_cache()
+        logging.info('train on {}'.format(self.config['device']))
 
-        self.best_S_params = self.get_params()
-        self.best_CDM_params = self.CDM.get_params()
+        # Initialize training config
+        lr = self.config['learning_rate']
 
         if self.trainable :
             self.S_optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
@@ -459,9 +471,32 @@ class AbstractSelectionStrategy(ABC):
         self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
         self.meta_scaler = torch.amp.GradScaler(self.config['device'])
 
+        match self.config['meta_trainer']:
+            case 'GAP':
+                pass
+            case 'Adam':
+                self.user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
+                                                    lr=self.CDM.config[
+                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
+                self.user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
+            case 'none':
+                pass
+            case _:
+                raise ValueError(f"Unknown meta trainer: {self.config['meta_trainer']}")
+            
+        # Initialize early stopping parameters
+        self.best_epoch = 0
+        self.best_valid_loss = float('inf')
+        self.best_valid_metric = self.metric_sign * float('inf')
+
+        self.best_S_params = self.get_params()
+        self.best_CDM_params = self.CDM.get_params()
+
+        # Training mode
         self.model.train()
         self.CDM.model.train()
 
+        # Train
         self._train_method(train_dataset, valid_dataset)
 
         self._trained = True
