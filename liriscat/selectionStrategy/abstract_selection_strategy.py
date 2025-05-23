@@ -12,7 +12,6 @@ from sklearn.metrics import roc_auc_score
 from torch.cuda import device
 from torch.utils.data import DataLoader
 
-
 from liriscat import utils
 from liriscat import dataset
 from liriscat import CDM
@@ -34,6 +33,7 @@ class AbstractSelectionStrategy(ABC):
 
         # Configuration
         self.config = config
+        self.metadata = metadata
         self.device = config['device']
         self._name = name
 
@@ -98,8 +98,11 @@ class AbstractSelectionStrategy(ABC):
             'mi_acc': utils.micro_ave_accuracy,
             'mi_prec': utils.micro_ave_precision,
             'mi_rec': utils.micro_ave_recall,
-            'mi_f1': utils.micro_ave_f1,
+            'mi_f_b': utils.micro_f_beta,
             'mi_auc': utils.micro_ave_auc,
+            'ma_prec': utils.macro_precision,
+            'ma_rec': utils.macro_recall,
+            'ma_f_b': utils.macro_f_beta
         }
         assert set(self.pred_metrics).issubset(self.pred_metric_functions.keys())
 
@@ -107,6 +110,7 @@ class AbstractSelectionStrategy(ABC):
             'pc-er': utils.compute_pc_er,
             'doa': utils.compute_doa,
             'rm': utils.compute_rm,
+            'doa_new': utils.compute_doa_train_test,
         }
         assert set(self.profile_metrics).issubset(self.profile_metric_functions.keys())
 
@@ -220,14 +224,15 @@ class AbstractSelectionStrategy(ABC):
                 sum_loss_0 = sum_loss_1 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
     
                 for batch in sub_dataloader:
-                    users_id, items_id, labels, concepts_id = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"]
+                    users_id, items_id, labels, concepts_id, nb_modalities = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
     
                     self.CDM.model.eval()
                     with torch.no_grad() , torch.amp.autocast('cuda'):                    
                         preds = self.CDM.model(users_id, items_id, concepts_id)
-                        sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
+                        sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
                         meta_preds = self.CDM.model(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'])
                         loss2 = self.CDM._compute_loss(users_id=users_id, items_id=items_id)
+
                         sum_loss_1 += loss2.item()
     
                     self.CDM.model.train()
@@ -237,10 +242,11 @@ class AbstractSelectionStrategy(ABC):
 
                     with torch.no_grad(), torch.amp.autocast('cuda'):
                         preds = self.CDM.model(users_id, items_id, concepts_id)
-                        sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
-                        sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds)
+                        sum_acc_1 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
+                        sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds,meta_data['nb_modalities'])
                         meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'])
                         sum_meta_loss += meta_loss.item()
+
                     
                 logging.debug(
                     f'- query loss_1 : {sum_loss_1/n_batches:.5f} '
@@ -304,6 +310,7 @@ class AbstractSelectionStrategy(ABC):
         loss_list = []
         pred_list = []
         label_list = []
+        nb_modalities_list = []
 
         logging.debug("-- evaluate valid --")
 
@@ -312,7 +319,9 @@ class AbstractSelectionStrategy(ABC):
             valid_query_env.load_batch(batch)
 
             # Prepare the meta set
+
             meta_data = valid_query_env.generate_IMPACT_meta()
+            nb_modalities = valid_loader.dataset.nb_modalities[meta_data["questions_id"]]
 
             for t in range(self.config['n_query']):
 
@@ -320,6 +329,7 @@ class AbstractSelectionStrategy(ABC):
                 actions = self.select_action(valid_query_env.get_query_options(t))
 
                 valid_query_env.update(actions, t)
+
 
                 self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data)
 
@@ -329,12 +339,15 @@ class AbstractSelectionStrategy(ABC):
             loss_list.append(total_loss.detach())
             pred_list.append(preds)
             label_list.append(meta_data['labels'])
+            nb_modalities_list.append(nb_modalities)
+
 
         pred_tensor = torch.cat(pred_list)
         label_tensor = torch.cat(label_list)
+        nb_modalities_tensor = torch.cat(nb_modalities_list)
         mean_loss = torch.mean(torch.stack(loss_list))
 
-        return mean_loss, self.valid_metric(pred_tensor, label_tensor)
+        return mean_loss, self.valid_metric(pred_tensor, label_tensor, nb_modalities_tensor)
     
 
     @evaluation_state
@@ -377,6 +390,7 @@ class AbstractSelectionStrategy(ABC):
         # Saving metric structures
         pred_list = {t : [] for t in range(self.config['n_query'])}
         label_list = {t : [] for t in range(self.config['n_query'])}
+        nb_modalities_list = {t : [] for t in range(self.config['n_query'])}
         emb_tensor = torch.zeros(size = (test_dataset.n_actual_users, self.config['n_query'], test_dataset.n_categories), device=self.device)
 
         # Test
@@ -387,6 +401,7 @@ class AbstractSelectionStrategy(ABC):
 
             # Prepare the meta set
             meta_data = test_query_env.generate_IMPACT_meta()
+            nb_modalities = test_dataset.nb_modalities[meta_data['questions_id']]
 
             for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
@@ -402,16 +417,38 @@ class AbstractSelectionStrategy(ABC):
 
                 pred_list[t].append(preds)
                 label_list[t].append(meta_data['labels'])
+                nb_modalities_list[t].append(nb_modalities)
+
                 emb_tensor[log_idx:log_idx+test_query_env.current_batch_size, t, :] = self.CDM.get_user_emb()[test_query_env.support_users_vec, :]
 
             log_idx += test_query_env.current_batch_size
 
         # Compute metrics in one pass using a dictionary comprehension
-        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t])).cpu().item()
+        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]), torch.cat(nb_modalities_list[t])).cpu().item()
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
-        results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset)
-                   for metric in self.profile_metrics} for t in range(self.config['n_query'])}
+        # results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset)
+        #            for metric in self.profile_metrics} for t in range(self.config['n_query'])}
+        results_profiles = {
+            t: {
+                metric: (
+                    self.profile_metric_functions[metric](
+                        emb_tensor[:, t, :],
+                        self.train_data.log_tensor.cpu().numpy(),  # train
+                        self.valid_data.log_tensor.cpu().numpy(),  # valid
+                        test_dataset.log_tensor.cpu().numpy(),  # test
+                        self.metadata,
+                        self.concept_map,
+                        self.U1,
+                        self.U2
+                    )
+                    if metric == "doa_new"
+                    else self.profile_metric_functions[metric](emb_tensor[:, t, :], test_dataset)
+                )
+                for metric in self.profile_metrics
+            }
+            for t in range(self.config["n_query"])
+        }
 
         return results_pred, results_profiles
 
@@ -539,6 +576,7 @@ class AbstractSelectionStrategy(ABC):
 
                 # Prepare the meta set
                 meta_data = train_query_env.generate_IMPACT_meta()
+                nb_modalities = train_dataset.nb_modalities[meta_data['questions_id']]
 
                 for i_query in range(self.config['n_query']):
 

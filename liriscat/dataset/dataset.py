@@ -357,6 +357,7 @@ class QueryEnv:
         self.n_query = data.config['n_query'] # Nb of questions to query
         self.device = device
         self.cq_max = data.cq_max # Max nb of categories per question
+        self.nb_modalities = data.nb_modalities # Number of modalities (nb of categories)
 
         self.sup_max = data.sup_max
         self.n_meta = data.n_meta # Size of the meta set (nb of questions set aside for each user in order to perform evaluation)
@@ -379,6 +380,7 @@ class QueryEnv:
         ## Submitted questions container (torch.Tensor) storing submitted data. 1D form: (l=users x questions x cat/q). After expansion for multiple categories/question
         self._sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
         self._sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_nb_modalities = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
         self._sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
         self._sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
 
@@ -479,6 +481,10 @@ class QueryEnv:
         return self._sub_question_ids[:self._current_charged_log_nb]
     
     @property
+    def sub_nb_modalities(self):
+        return self._sub_nb_modalities[:self._current_charged_log_nb]
+    
+    @property
     def sub_labels(self):
         return self._sub_labels[:self._current_charged_log_nb]
     
@@ -562,7 +568,7 @@ class QueryEnv:
         with torch.no_grad():
             
 
-            new_user_ids, new_question_ids, new_labels = self.generate_IMPACT_query(
+            new_user_ids, new_question_ids, new_labels, new_nb_modalities = self.generate_IMPACT_query(
                 self.support_questions[self.row_idx, actions_indices],
                 self.support_responses[self.row_idx, actions_indices],
                 self.support_cat_nb[self.row_idx, actions_indices],
@@ -586,6 +592,7 @@ class QueryEnv:
 
             self._sub_user_ids[idx:self.current_charged_log_nb] = new_user_ids
             self._sub_question_ids[idx:self.current_charged_log_nb] = new_question_ids
+            self._sub_nb_modalities[idx:self.current_charged_log_nb] = new_nb_modalities
             self._sub_labels[idx:self.current_charged_log_nb] = new_labels
             self._sub_category_ids[idx:self.current_charged_log_nb] = new_category_ids
 
@@ -612,7 +619,8 @@ class QueryEnv:
             "user_ids": self.sub_user_ids,
             "question_ids": self.sub_question_ids,
             "labels": self.sub_labels,
-            "category_ids": self.sub_category_ids}
+            "category_ids": self.sub_category_ids,
+            "nb_modalities": self.sub_nb_modalities}
 
     def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
         """
@@ -624,11 +632,12 @@ class QueryEnv:
         :return:
         """
 
-        question_ids = torch.repeat_interleave(QQ, QC_NB)
-        user_ids = torch.repeat_interleave(U, QC_NB)
+        questions_id = torch.repeat_interleave(QQ, QC_NB)
+        users_id = torch.repeat_interleave(U, QC_NB)
         labels = torch.repeat_interleave(QL, QC_NB)
+        nb_modalities = self.nb_modalities[questions_id]
 
-        return user_ids, question_ids, labels
+        return users_id, questions_id, labels, nb_modalities
 
     def generate_IMPACT_meta(self):
         """
@@ -644,8 +653,9 @@ class QueryEnv:
         users_id = torch.repeat_interleave(MU, MC_NB)
         labels = torch.repeat_interleave(ML, MC_NB)
         categories_id = self.meta_cat[self.meta_cat_mask]
+        nb_modalities = self.nb_modalities[questions_id]
 
-        return {'users_id':users_id, 'questions_id':questions_id, 'labels':labels, 'categories_id':categories_id}
+        return {'users_id':users_id, 'questions_id':questions_id, 'labels':labels, 'categories_id':categories_id,'nb_modalities':nb_modalities}
 
 
 class UserCollate(object):
@@ -660,7 +670,7 @@ class UserCollate(object):
         return batch
 
 
-class SubmittedDataset(Dataset):
+class SubmittedDataset(data.Dataset):
     """
     Bridge class transforming the set of submitted question into a torch.utils.data.Dataset
     """
@@ -671,6 +681,7 @@ class SubmittedDataset(Dataset):
         self.question_ids = query_data["question_ids"]
         self.labels = query_data["labels"]
         self.category_ids = query_data["category_ids"]
+        self.nb_modalities = query_data["nb_modalities"]
         self.length = self.user_ids.shape[0]
 
     def __len__(self):
@@ -682,4 +693,5 @@ class SubmittedDataset(Dataset):
             "question_ids": self.question_ids[idx],
             "labels": self.labels[idx],
             "category_ids": self.category_ids[idx],
+            "nb_modalities": self.nb_modalities[idx]
         }
