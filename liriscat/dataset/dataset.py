@@ -179,6 +179,19 @@ class Dataset(IMPACTDataset):
                                 torch.ones(size, dtype=torch.bool, device=self.device))
         return _cat_tensor, _cat_mask, _cat_len
 
+    def load_config(self, config):
+        """
+        Change the configuration of the dataset
+        :param config: new configuration
+        """
+        self._config = config
+        self._query_seed = config['seed']
+        self.device = config['device']
+
+        assert self._n_meta <= self._metadata['min_nb_users_logs'] - self.config["n_query"], \
+            f'Some users have not enough logs to submit {self.config["n_query"]} questions, the support set is too small: min number of user logs = {self._metadata["min_nb_users_logs"]}'
+
+
 
 class CATDataset(Dataset, data.dataset.Dataset):
     """
@@ -270,7 +283,7 @@ class EvalDataset(CATDataset):
     valid and test dataset
     """
 
-    def __init__(self, data, concept_map, metadata, config,nb_modalities):
+    def __init__(self, data, concept_map, metadata, config, nb_modalities):
         """
         Args:
             data: list, [(sid, qid, score)]
@@ -627,12 +640,12 @@ class QueryEnv:
         MC_NB = self.meta_cat_nb.reshape(-1)
         MU = self.meta_users.reshape(-1)
 
-        question_ids = torch.repeat_interleave(MQ, MC_NB)
-        user_ids = torch.repeat_interleave(MU, MC_NB)
+        questions_id = torch.repeat_interleave(MQ, MC_NB)
+        users_id = torch.repeat_interleave(MU, MC_NB)
         labels = torch.repeat_interleave(ML, MC_NB)
-        category_ids = self.meta_cat[self.meta_cat_mask]
+        categories_id = self.meta_cat[self.meta_cat_mask]
 
-        return user_ids, question_ids, labels, category_ids
+        return {'users_id':users_id, 'questions_id':questions_id, 'labels':labels, 'categories_id':categories_id}
 
 
 class UserCollate(object):

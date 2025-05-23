@@ -10,7 +10,7 @@ import torch.utils.data as data
 from IMPACT.model.abstract_model import AbstractModel
 
 from IMPACT.dataset import *
-from IMPACT.model import IMPACT
+from IMPACT.model import IMPACT, IMPACTModel_low_mem, IMPACTModel, custom_loss_low_mem, custom_loss
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -40,9 +40,18 @@ class CATIMPACT(IMPACT) :
 
         # Replacement of pretrained users embeddings with randomly generated ones
         self.init_users_prior(train_data, valid_data)
+            
+    def freeze_test_users(self, train_data, valid_data):
+        self.model.users_emb.weight.requires_grad_(False)    # freeze all
+        self.model.users_emb.weight[list(train_data.users_id)].requires_grad_(True)
+        self.model.users_emb.weight[list(valid_data.users_id)].requires_grad_(True)
 
-    def get_regularizer_with_pior(self):
-        A = (self.model.users_emb.weight - self.model.prior_mean) 
+    def unfreeze_test_freeze_train_valid_users(self, test_data):
+        self.model.users_emb.weight.requires_grad_(False)    # freeze all
+        self.model.users_emb.weight[list(test_data.users_id)].requires_grad_(True)
+
+    def get_regularizer_with_pior(self,unique_users, unique_items):    
+        A = (self.model.users_emb.weight[unique_users] - self.model.prior_mean) 
         S = self.model.prior_cov_inv
         SA_T = torch.matmul(A, S)  
         
@@ -50,6 +59,7 @@ class CATIMPACT(IMPACT) :
 
     def get_params(self):
         return self.model.state_dict()
+
 
     def init_test(self, test_data):
         self.model.R = test_data.log_tensor
@@ -62,7 +72,6 @@ class CATIMPACT(IMPACT) :
         """
         train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)),device=self.config['device'])
         train_valid_users = train_valid_users.to(dtype=torch.long)
-        test_users = list(set(torch.arange(train_data.n_users).tolist()) - train_data.users_id - valid_data.users_id)
         
         # NO data leak to test dataset because we only look at the train and valid users 
         user_embeddings = self.model.users_emb(train_valid_users).float().detach()
@@ -73,7 +82,7 @@ class CATIMPACT(IMPACT) :
         E = torch.normal(ave.expand(train_data.n_users, -1), std.expand(train_data.n_users, -1)/2)
         E = E - E.mean(dim=0) + ave
         with torch.no_grad():
-            self.model.users_emb.weight[:] = E.to(self.config['device'])
+            self.model.users_emb.weight.data = E.to(self.config['device'])
 
         cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
@@ -83,40 +92,77 @@ class CATIMPACT(IMPACT) :
         
         self.initialized_users_prior = True
 
-    def _compute_loss(self, users_id, items_id, concepts_id, labels):
-        device = self.config['device']
-        beta = 0.5
+    def _compute_loss(self, users_id, items_id, concepts_id=None, labels=None):
 
         lambda_param = self.config['lambda']
 
-        u_emb, im_emb_prime, i0_emb_prime, in_emb_prime, W_t = self.model.get_embeddings(users_id, items_id,
-                                                                                         concepts_id)
+        u_emb = self.get_users_emb(users_id)
+        
+        im_emb_prime = self.get_modalities_emb(items_id)
 
-        L1, L2, L3 = self.loss(u_emb=u_emb, im_emb_prime=im_emb_prime, i0_emb_prime=i0_emb_prime,
-                                 in_emb_prime=in_emb_prime, W_t=W_t,
-                                 modalities_idx=self.model.ir_idx[users_id, items_id],
-                                 nb_mod_max_plus_sent=self.model.nb_mod_max_plus_sent,
-                                 diff_mask=self.model.diff_mask[items_id],
-                                 diff_mask2=self.model.diff_mask2[items_id],
-                                 users_id=users_id, items_id=items_id,
-                                 concepts_id=concepts_id, R=self.model.R, users_emb=self.model.users_emb.weight)
-
-        R = self.model.get_regularizer()
-
-        # Stack losses into a tensor
-        #losses = torch.stack([L1, L3])  # Shape: (4,)
-
-        # Update statistics and compute weights
-        #weights = self.L_W.compute_weights(losses)
+        L1 = custom_l1(u_emb=u_emb,
+            im_emb_prime=im_emb_prime,
+            modalities_idx=self.model.ir_idx[users_id, items_id],
+            nb_mod_max_plus_sent=self.model.nb_mod_max_plus_sent,
+            diff_mask=self.model.diff_mask[items_id])
+        
+        unique_users =  torch.unique(users_id)
+        unique_items = torch.unique(items_id)
+        R = self.model.get_regularizer(unique_users, unique_items)
 
         # Compute total loss
         total_loss = 1*L1 + lambda_param * R
 
         return total_loss
+    
+    
+    def get_modalities_emb(self, items_id):
+
+        # Compute item-response indices
+        im_idx = self.model.im_idx[items_id]  # [batch_size, nb_mod]
+        im_emb_prime = self.model.item_response_embeddings(im_idx)  # [batch_size, nb_mod, embedding_dim]
+
+        return im_emb_prime
+    
+    def get_users_emb(self, users_id):
+        u_emb = self.model.users_emb(users_id)
+
+        return u_emb
+
 
 
     def get_KLI(self, query_data) :
 
         preds = self.model(query_data)
+
+@torch.jit.script
+def custom_l1(u_emb: torch.Tensor,
+            im_emb_prime: torch.Tensor,
+            modalities_idx: torch.Tensor,
+            nb_mod_max_plus_sent: int,
+            diff_mask: torch.Tensor):
+
+
+    diff = u_emb.unsqueeze(1) - im_emb_prime
+
+
+    p_uir = -torch.sum(diff ** 2, dim=2)  # [batch_size, nb_mod_max_plus_sent]
+
+    ##### L1
+    device = p_uir.device
+
+    # Compute differences between adjacent modalities
+    diffs = p_uir[:, :-1] - p_uir[:, 1:]  # shape = [batch_size, nb_mod_max_plus_sent-1]
+
+    # Compute loss terms for responses greater and less than r
+    greater_mask = torch.arange(nb_mod_max_plus_sent - 1, device=device).unsqueeze(0) >= modalities_idx.unsqueeze(
+        1)  # nb_mod_max_plus_sent - 1 : start at 0 (torch.arange ok), sentinels (included)
+    less_mask = ~greater_mask
+
+    L1 = torch.where(diff_mask == 1, F.softplus((less_mask.int() - greater_mask.int()) * diffs),
+                     torch.zeros_like(diff_mask)).mean(dim=1).mean()
+
+   
+    return L1
 
 

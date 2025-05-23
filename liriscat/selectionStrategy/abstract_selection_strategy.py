@@ -28,19 +28,42 @@ class AbstractSelectionStrategy(ABC):
     def __init__(self, name: str = None, metadata=None, **config):
         super().__init__()
 
+        # Reproductibility 
         utils.set_seed(config['seed'])
+        self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
 
+        # Configuration
         self.config = config
         self.device = config['device']
         self._name = name
-        self.CDM = None
-        self.model = None
+
+        # States
         self.state = None
         self._trained = False
         self.fold = 0
         self.trainable = True
-        self._rng = torch.Generator(device=config['device']).manual_seed(config['seed'])
 
+        # Algorithmic components
+        self.CDM = None
+        self.model = None
+        self.inner_loop = None
+        self._train_method = None
+
+        # Parameters
+        self.meta_params = torch.nn.parameter.Parameter(torch.empty(1,metadata['num_dimension_id'])) # Parameters of the meta trainer
+
+        # Metrics
+        self.pred_metrics = config['pred_metrics'] if config['pred_metrics'] else ['rmse', 'mae']
+        self.profile_metrics = config['profile_metrics'] if config['profile_metrics'] else ['pc-er', 'doa']
+        self.valid_metric = None
+        self.metric_sign = None
+
+        # Initialization of algorithmic components, parameters and metrics
+        ## Parameters init
+        torch.nn.init.normal_(self.meta_params)
+        self.meta_params = self.meta_params.to(self.config['device'])
+
+        ## Algrithmic component init
         if self.config['verbose_early_stopping']:
             # Decide on the early stopping criterion
             match self.config['esc']:
@@ -51,7 +74,24 @@ class AbstractSelectionStrategy(ABC):
                 case 'error':
                     self._train_method = self._train_early_stopping_error
 
-        self.pred_metrics = config['pred_metrics'] if config['pred_metrics'] else ['rmse', 'mae']
+        match config['CDM']:
+            case 'impact':
+                self.CDM = CDM.CATIMPACT(**config)
+            case 'irt':
+                irt_config = utils.convert_config_to_EduCAT(config, metadata)
+                self.CDM = CDM.CATIRT(**irt_config)
+
+        match config['meta_trainer']:
+            case 'GAP':
+                self.inner_loop = self.GAP_inner_loop
+            case 'Adam':
+                self.inner_loop = self.Adam_inner_loop
+            case 'none':
+                self.inner_loop = None
+            case _:
+                raise ValueError(f"Unknown meta trainer: {config['meta_trainer']}")
+
+        ## Metric init
         self.pred_metric_functions = {
             'rmse': utils.root_mean_squared_error,
             'mae': utils.mean_absolute_error,
@@ -64,7 +104,6 @@ class AbstractSelectionStrategy(ABC):
         }
         assert set(self.pred_metrics).issubset(self.pred_metric_functions.keys())
 
-        self.profile_metrics = config['profile_metrics'] if config['profile_metrics'] else ['pc-er', 'doa']
         self.profile_metric_functions = {
             'pc-er': utils.compute_pc_er,
             'doa': utils.compute_doa,
@@ -83,13 +122,6 @@ class AbstractSelectionStrategy(ABC):
                 self.valid_metric = utils.micro_ave_accuracy
                 self.metric_sign = -1
 
-        match config['CDM']:
-            case 'impact':
-                self.CDM = CDM.CATIMPACT(**config)
-            case 'irt':
-                irt_config = utils.convert_config_to_EduCAT(config, metadata)
-                self.CDM = CDM.CATIRT(**irt_config)
-
     @property
     def name(self):
         return f'{self._name}_cont_model'
@@ -99,17 +131,17 @@ class AbstractSelectionStrategy(ABC):
         self._name = new_value
 
     @abstractmethod
-    def _loss_function(self, user_ids, question_ids, categories, labels):
+    def _loss_function(self, users_id, items_id, concepts_id, labels):
         raise NotImplementedError
 
-    def update_S_params(self, user_ids, question_ids, labels, category_ids):
+    def update_S_params(self, users_id, items_id, labels, concepts_id):
         with torch.enable_grad():
             logging.debug("- Update S params ")
             self.model.train()
 
             self.S_optimizer.zero_grad()
 
-            loss = self._loss_function(user_ids, question_ids, labels, category_ids)
+            loss = self._loss_function(users_id, items_id, labels, concepts_id)
             
             self.S_scaler.scale(loss).backward()
             self.S_scaler.step(self.S_optimizer)
@@ -117,7 +149,7 @@ class AbstractSelectionStrategy(ABC):
 
             self.model.eval()
 
-    def update_CDM_params(self, user_ids, question_ids, labels, category_ids):
+    def update_CDM_params(self, users_id, items_id, labels, concepts_id):
         with torch.enable_grad():
             logging.debug("- Update CDM params ")
             self.model.train()
@@ -126,7 +158,7 @@ class AbstractSelectionStrategy(ABC):
 
                 self.CDM_optimizer.zero_grad()
     
-                loss = self.CDM._compute_loss(user_ids, question_ids, category_ids, labels )
+                loss = self.CDM._compute_loss(users_id, items_id, concepts_id, labels )
                 
                 self.CDM_scaler.scale(loss).backward()
                 self.CDM_scaler.step(self.CDM_optimizer)
@@ -134,79 +166,94 @@ class AbstractSelectionStrategy(ABC):
 
             self.model.eval()
 
-    def update_users(self,query_data, meta_data, meta_labels) :
+    def GAP_inner_loop(self, query_data, meta_data):
+
+        def take_step(users_id, questions_id, labels, categories_id):
+
+            with torch.amp.autocast('cuda'):
+                loss = self.CDM._compute_loss(users_id, questions_id, labels, categories_id)
+
+                grads = torch.autograd.grad(loss, self.CDM.model.users_emb().parameters(), create_graph=False)
+                preconditioner = (torch.nn.Softplus(beta=2)(self.meta_params).to("cuda").repeat(grads[0].shape[0],1) * grads[0])
+            
+                with torch.no_grad():
+                    self.CDM.model.users_emb.weight.data -= self.config["inner_user_lr"] * preconditioner
+
+                return loss
+
+
+        self.abstract_inner_loop(query_data, meta_data, take_step)
+
+    def Adam_inner_loop(self, query_data, meta_data):
+        user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
+                                                    lr=self.CDM.config[
+                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
+        user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
+
+        def take_step(users_id, questions_id, labels, categories_id):
+            user_params_optimizer.zero_grad()
+            if user_params_scaler is not None:
+                with torch.amp.autocast(device_type='cuda'):
+                    loss = self.CDM._compute_loss(users_id, questions_id)
+                user_params_scaler.scale(loss).backward()
+                user_params_scaler.step(user_params_optimizer)
+                user_params_scaler.update()
+            else:
+                loss = self.CDM._compute_loss(users_id, questions_id)
+                loss.backward()
+                user_params_optimizer.step()
+            return loss
+
+        self.abstract_inner_loop(query_data, meta_data, take_step)
+
+
+    def abstract_inner_loop(self,query_data, meta_data, optimizer):
+        """
+            User parameters update (theta) on the query set
+        """
+        logging.debug("- Update users ")
+
         with torch.enable_grad():
-            logging.debug("- Update users ")
-            self.CDM.model.train()
-            m_user_ids, m_question_ids, m_category_ids = meta_data
-    
-            data = dataset.SubmittedDataset(query_data)
-            dataloader = DataLoader(data, batch_size=2048, shuffle=True, num_workers=0)
-    
-            user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
-                                                          lr=self.CDM.config[
-                                                              'inner_user_lr'])  # todo : Decide How to use a scheduler
-    
-            user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
-    
-            n_batches = len(dataloader)
+
+
+            sub_data = dataset.SubmittedDataset(query_data)
+            sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, num_workers=0)
+            n_batches = len(sub_dataloader)
     
             for t in range(self.CDM.config['num_inner_users_epochs']) :
     
-                sum_loss_0 = 0
-                sum_loss_1 = 0
-                sum_acc_0 = 0
-                sum_acc_1 = 0
-                sum_meta_acc = 0
-                sum_meta_loss = 0
+                sum_loss_1 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
     
-                for batch in dataloader:
-                    user_ids = batch["user_ids"]
-                    question_ids = batch["question_ids"]
-                    labels = batch["labels"]
-                    category_ids = batch["category_ids"]
+                for batch in sub_dataloader:
+                    users_id, items_id, labels, concepts_id = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"]
     
                     self.CDM.model.eval()
-                    with torch.no_grad() :                    
-                        preds = self.CDM.model(user_ids, question_ids, category_ids)
+                    with torch.no_grad() , torch.amp.autocast('cuda'):                    
+                        preds = self.CDM.model(users_id, items_id, concepts_id)
                         sum_acc_0 += utils.micro_ave_accuracy(labels, preds)
-
-                        meta_preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
-    
-                    self.CDM.model.train()
-                    user_params_optimizer.zero_grad()
-                    
-                    with torch.amp.autocast('cuda'):
-                        loss = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
-                        sum_loss_0 += loss.item()
-
-                    user_params_scaler.scale(loss).backward()
-                    user_params_scaler.step(user_params_optimizer)
-                    user_params_scaler.update()
-
-                    self.CDM.model.eval()
-                    with torch.no_grad(), torch.amp.autocast('cuda'):
-                        loss2 = self.CDM._compute_loss(user_ids, question_ids, labels, category_ids)
+                        meta_preds = self.CDM.model(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'])
+                        loss2 = self.CDM._compute_loss(users_id=users_id, items_id=items_id)
                         sum_loss_1 += loss2.item()
     
-                    preds = self.CDM.model(user_ids, question_ids, category_ids)
-    
-                    sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
-                    sum_meta_acc += utils.micro_ave_accuracy(meta_labels, meta_preds)
-                    
-                    with torch.no_grad(),torch.amp.autocast('cuda') :
-                        meta_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, meta_labels, m_category_ids)
+                    self.CDM.model.train()
+                    loss = optimizer(users_id, items_id, labels, concepts_id)
+                    sum_loss_0 += loss.item()
+                    self.CDM.model.eval()
+
+                    with torch.no_grad(), torch.amp.autocast('cuda'):
+                        preds = self.CDM.model(users_id, items_id, concepts_id)
+                        sum_acc_1 += utils.micro_ave_accuracy(labels, preds)
+                        sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds)
+                        meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'])
                         sum_meta_loss += meta_loss.item()
                     
                 logging.debug(
-                    f'inner epoch {t} - query loss_0 : {sum_loss_0/n_batches:.5f} '
                     f'- query loss_1 : {sum_loss_1/n_batches:.5f} '
                     f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
                     f'- query acc 1 : {sum_acc_1/n_batches:.5f} '
                     f'- meta acc 0 : {sum_meta_acc/n_batches:.5f}'
                     f'- meta loss 1 : {sum_meta_loss:.5f}'
                 )
-            self.CDM.model.eval()
 
     @abstractmethod
     def select_action(self, options_dict):
@@ -270,7 +317,7 @@ class AbstractSelectionStrategy(ABC):
             valid_query_env.load_batch(batch)
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = valid_query_env.generate_IMPACT_meta()
+            meta_data = valid_query_env.generate_IMPACT_meta()
 
             for t in range(self.config['n_query']):
 
@@ -279,15 +326,14 @@ class AbstractSelectionStrategy(ABC):
 
                 valid_query_env.update(actions, t)
 
-                self.update_users(valid_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
+                self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data)
 
-
-            preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
-            total_loss = self.CDM._compute_loss(m_user_ids, m_question_ids, m_labels.int(), m_category_ids)
+            preds = self.CDM.model(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'])
+            total_loss = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int())
 
             loss_list.append(total_loss.detach())
             pred_list.append(preds)
-            label_list.append(m_labels)
+            label_list.append(meta_data['labels'])
 
         pred_tensor = torch.cat(pred_list)
         label_tensor = torch.cat(label_list)
@@ -302,6 +348,10 @@ class AbstractSelectionStrategy(ABC):
         Evaluate the model on the given data using the given metrics.
         """
         logging.debug("-- evaluate test --")
+
+                # Freezing other users than train and valid
+        if self.config['new_users_framework']:
+            self.CDM.unfreeze_test_freeze_train_valid_users(test_dataset)
         
         test_dataset.split_query_meta(self.config['seed'])
 
@@ -323,7 +373,7 @@ class AbstractSelectionStrategy(ABC):
             test_query_env.load_batch(batch)
 
             # Prepare the meta set
-            m_user_ids, m_question_ids, m_labels, m_category_ids = test_query_env.generate_IMPACT_meta()
+            meta_data = test_query_env.generate_IMPACT_meta()
 
             for t in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
 
@@ -332,10 +382,10 @@ class AbstractSelectionStrategy(ABC):
                 actions = self.select_action(options)
                 test_query_env.update(actions, t)
 
-                self.update_users(test_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels)
+                self.inner_loop(test_query_env.feed_IMPACT_sub(),meta_data)
 
                 with torch.no_grad() :
-                    preds = self.CDM.model(m_user_ids, m_question_ids, m_category_ids)
+                    preds = self.CDM.model(meta_data['users_id'], meta_data['questions_id'], meta_data['categories_id'])
 
                 pred_list[t].append(preds)
                 label_list[t].append(m_labels)
@@ -379,15 +429,18 @@ class AbstractSelectionStrategy(ABC):
         else:
             print("Warning: self.model is a function and cannot be moved to device")
 
+
+
     def train(self, train_dataset: dataset.CATDataset, valid_dataset: dataset.EvalDataset):
 
         lr = self.config['learning_rate']
-        batch_size = self.config['batch_size']
         device = self.config['device']
 
         torch.cuda.empty_cache()
 
-        self.init_models(train_dataset, valid_dataset)
+        # Freezing other users than train and valid
+        if self.config['new_users_framework']:
+            self.CDM.freeze_test_users(train_dataset, valid_dataset)
 
         logging.info('train on {}'.format(device))
         logging.info("-- START Training --")
@@ -411,8 +464,9 @@ class AbstractSelectionStrategy(ABC):
         self.CDM_optimizer = torch.optim.Adam(self.CDM.model.parameters(), lr=self.config['inner_lr'])
         self.CDM_scaler = torch.amp.GradScaler(self.config['device'])
 
-        # self.meta_optimizer = torch.optim.Adam(self.CDM.model.parameters(), lr=self.config['inner_lr'])
-        # self.CDM_scaler = torch.amp.GradScaler(self.config['device'])
+        self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.001) #todo : wrap in a correct module
+        self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
+        self.meta_scaler = torch.amp.GradScaler(self.config['device'])
 
         self.model.train()
         self.CDM.model.train()
@@ -458,7 +512,7 @@ class AbstractSelectionStrategy(ABC):
                 train_query_env.load_batch(batch)
 
                 # Prepare the meta set
-                m_user_ids, m_question_ids, m_labels, m_category_ids = train_query_env.generate_IMPACT_meta()
+                meta_data = train_query_env.generate_IMPACT_meta()
 
                 for i_query in range(self.config['n_query']):
 
@@ -467,9 +521,12 @@ class AbstractSelectionStrategy(ABC):
                     actions = self.select_action(train_query_env.get_query_options(i_query))
                     train_query_env.update(actions, i_query)
 
-                    self.update_users(train_query_env.feed_IMPACT_sub(),(m_user_ids, m_question_ids, m_category_ids),m_labels )
+                    self.inner_loop(train_query_env.feed_IMPACT_sub(),meta_data)
                     
-                self.update_S_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
+                self.update_S_params(users_id=meta_data['users_id'],
+                                     items_id=meta_data['questions_id'],
+                                     labels=meta_data['labels'],
+                                     concepts_id=meta_data['categories_id'])
                 #self.update_CDM_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
 
             # Early stopping
