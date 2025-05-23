@@ -41,14 +41,6 @@ class CATIMPACT(IMPACT) :
         # Replacement of pretrained users embeddings with randomly generated ones
         self.init_users_prior(train_data, valid_data)
             
-    def freeze_test_users(self, train_data, valid_data):
-        self.model.users_emb.weight.requires_grad_(False)    # freeze all
-        self.model.users_emb.weight[list(train_data.users_id)].requires_grad_(True)
-        self.model.users_emb.weight[list(valid_data.users_id)].requires_grad_(True)
-
-    def unfreeze_test_freeze_train_valid_users(self, test_data):
-        self.model.users_emb.weight.requires_grad_(False)    # freeze all
-        self.model.users_emb.weight[list(test_data.users_id)].requires_grad_(True)
 
     def get_regularizer_with_pior(self,unique_users, unique_items):    
         A = (self.model.users_emb.weight[unique_users] - self.model.prior_mean) 

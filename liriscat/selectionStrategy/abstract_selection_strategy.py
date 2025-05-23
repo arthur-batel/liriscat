@@ -60,8 +60,7 @@ class AbstractSelectionStrategy(ABC):
 
         # Initialization of algorithmic components, parameters and metrics
         ## Parameters init
-        torch.nn.init.normal_(self.meta_params)
-        self.meta_params = self.meta_params.to(self.config['device'])
+        torch.nn.init.normal_(self.meta_params).to(self.config['device'])
 
         ## Algrithmic component init
         if self.config['verbose_early_stopping']:
@@ -222,7 +221,7 @@ class AbstractSelectionStrategy(ABC):
     
             for t in range(self.CDM.config['num_inner_users_epochs']) :
     
-                sum_loss_1 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
+                sum_loss_0 = sum_loss_1 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
     
                 for batch in sub_dataloader:
                     users_id, items_id, labels, concepts_id = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"]
@@ -348,10 +347,6 @@ class AbstractSelectionStrategy(ABC):
         Evaluate the model on the given data using the given metrics.
         """
         logging.debug("-- evaluate test --")
-
-                # Freezing other users than train and valid
-        if self.config['new_users_framework']:
-            self.CDM.unfreeze_test_freeze_train_valid_users(test_dataset)
         
         test_dataset.split_query_meta(self.config['seed'])
 
@@ -388,7 +383,7 @@ class AbstractSelectionStrategy(ABC):
                     preds = self.CDM.model(meta_data['users_id'], meta_data['questions_id'], meta_data['categories_id'])
 
                 pred_list[t].append(preds)
-                label_list[t].append(m_labels)
+                label_list[t].append(meta_data['labels'])
                 emb_tensor[log_idx:log_idx+test_query_env.current_batch_size, t, :] = self.CDM.get_user_emb()[test_query_env.support_users_vec, :]
 
             log_idx += test_query_env.current_batch_size
@@ -437,10 +432,6 @@ class AbstractSelectionStrategy(ABC):
         device = self.config['device']
 
         torch.cuda.empty_cache()
-
-        # Freezing other users than train and valid
-        if self.config['new_users_framework']:
-            self.CDM.freeze_test_users(train_dataset, valid_dataset)
 
         logging.info('train on {}'.format(device))
         logging.info("-- START Training --")
