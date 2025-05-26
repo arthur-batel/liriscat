@@ -84,6 +84,9 @@ class CATIMPACT(IMPACT) :
         
         self.initialized_users_prior = True
 
+    def _loss_function(self, users_id, items_id, concepts_id=None, labels=None):
+        return self._compute_loss(users_id, items_id, concepts_id, labels)
+
     def _compute_loss(self, users_id, items_id, concepts_id=None, labels=None):
 
         lambda_param = self.config['lambda']
