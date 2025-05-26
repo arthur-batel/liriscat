@@ -222,10 +222,10 @@ class AbstractSelectionStrategy(ABC):
 
 
             sub_data = dataset.SubmittedDataset(query_data)
-            sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, num_workers=0)
+            sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
             n_batches = len(sub_dataloader)
     
-            for t in range(self.CDM.config['num_inner_users_epochs']) :
+            for t in range(self.config['num_inner_users_epochs']) :
     
                 sum_loss_0 = sum_loss_1 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
     
@@ -394,7 +394,7 @@ class AbstractSelectionStrategy(ABC):
         test_dataset.split_query_meta(self.config['seed'])
         test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
-                                      shuffle=False, pin_memory=False, num_workers=0)
+                                      shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
 
         # Saving metric structures
         pred_list = {t : [] for t in range(self.config['n_query'])}
@@ -569,10 +569,10 @@ class AbstractSelectionStrategy(ABC):
         valid_query_env = QueryEnv(valid_dataset, self.device, self.config['valid_batch_size'])
 
         train_loader = DataLoader(dataset=train_dataset, collate_fn=UserCollate(train_query_env), batch_size=self.config['batch_size'],
-                                  shuffle=True, pin_memory=False, num_workers=0)
+                                  shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
         valid_loader = DataLoader(dataset=valid_dataset, collate_fn=UserCollate(valid_query_env),
                                   batch_size=self.config['valid_batch_size'],
-                                  shuffle=False, pin_memory=False, num_workers=0)
+                                  shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
 
