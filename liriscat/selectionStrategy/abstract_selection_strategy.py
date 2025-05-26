@@ -49,9 +49,6 @@ class AbstractSelectionStrategy(ABC):
         self.inner_loop = None
         self._train_method = None
 
-        # Parameters
-        self.meta_params = torch.nn.parameter.Parameter(torch.empty(1,metadata['num_dimension_id'])) # Parameters of the meta trainer
-
         # Metrics
         self.pred_metrics = config['pred_metrics'] if config['pred_metrics'] else ['rmse', 'mae']
         self.profile_metrics = config['profile_metrics'] if config['profile_metrics'] else ['pc-er', 'doa']
@@ -59,9 +56,6 @@ class AbstractSelectionStrategy(ABC):
         self.metric_sign = None
 
         # Initialization of algorithmic components, parameters and metrics
-        ## Parameters init
-        torch.nn.init.normal_(self.meta_params).to(self.config['device'])
-
         ## Algrithmic component init
         if self.config['verbose_early_stopping']:
             # Decide on the early stopping criterion
@@ -83,6 +77,8 @@ class AbstractSelectionStrategy(ABC):
         match config['meta_trainer']:
             case 'GAP':
                 self.inner_loop = self.GAP_inner_loop
+                self.meta_params = torch.nn.parameter.Parameter(torch.empty(1,metadata['num_dimension_id'])) # Parameters of the meta trainer
+                torch.nn.init.normal_(self.meta_params).to(self.config['device'])
             case 'Adam':
                 self.inner_loop = self.Adam_inner_loop
             case 'none':
@@ -136,51 +132,61 @@ class AbstractSelectionStrategy(ABC):
     @abstractmethod
     def _loss_function(self, users_id, items_id, concepts_id, labels):
         raise NotImplementedError
+    
 
-    def update_S_params(self, users_id, items_id, labels, concepts_id):
+    def update_S_params(self, loss):
         with torch.enable_grad():
             logging.debug("- Update S params ")
             self.model.train()
-
-            self.S_optimizer.zero_grad()
-
-            loss = self._loss_function(users_id, items_id, labels, concepts_id)
             
             self.S_scaler.scale(loss).backward()
             self.S_scaler.step(self.S_optimizer)
             self.S_scaler.update()
 
+            self.S_optimizer.zero_grad()
+
             self.model.eval()
 
-    def update_CDM_params(self, users_id, items_id, labels, concepts_id):
+    def update_meta_params(self, loss):
+        with torch.enable_grad():
+            logging.debug("- Update meta params ")
+            self.model.train()
+            
+            self.meta_scaler.scale(loss).backward()
+            self.meta_scaler.step(self.meta_optimizer)
+            self.meta_scaler.update()
+
+            self.meta_optimizer.zero_grad()
+
+            self.model.eval()
+
+    def update_CDM_params(self, loss):
         with torch.enable_grad():
             logging.debug("- Update CDM params ")
             self.model.train()
 
-            for t in range(self.config['num_inner_epochs']) :
+            self.CDM_scaler.scale(loss).backward()
+            self.CDM_scaler.step(self.CDM_optimizer)
+            self.CDM_scaler.update()
 
-                self.CDM_optimizer.zero_grad()
-    
-                loss = self.CDM._compute_loss(users_id, items_id, concepts_id, labels )
-                
-                self.CDM_scaler.scale(loss).backward()
-                self.CDM_scaler.step(self.CDM_optimizer)
-                self.CDM_scaler.update()
+            self.CDM_optimizer.zero_grad()
 
             self.model.eval()
 
     def GAP_inner_loop(self, query_data, meta_data):
 
         def take_step(users_id, questions_id, labels, categories_id):
-
+            self.user_params_optimizer.zero_grad()
             with torch.amp.autocast('cuda'):
                 loss = self.CDM._compute_loss(users_id, questions_id, labels, categories_id)
 
                 grads = torch.autograd.grad(loss, self.CDM.model.users_emb().parameters(), create_graph=False)
-                preconditioner = (torch.nn.Softplus(beta=2)(self.meta_params).to("cuda").repeat(grads[0].shape[0],1) * grads[0])
-            
-                with torch.no_grad():
-                    self.CDM.model.users_emb.weight.data -= self.config["inner_user_lr"] * preconditioner
+                preconditioner = torch.nn.Softplus(beta=2)(self.meta_params).repeat(self.metadata["num_user_id"],1) 
+                self.CDM.model.users_emb.grad = preconditioner * grads[0]
+
+                self.user_params_scaler.scale(loss).backward()
+                self.user_params_scaler.step(self.user_params_optimizer)
+                self.user_params_scaler.update()
 
                 return loss
 
@@ -364,7 +370,10 @@ class AbstractSelectionStrategy(ABC):
         # Initialize testing config
         match self.config['meta_trainer']:
             case 'GAP':
-                pass
+                self.user_params_optimizer = torch.optim.SGD(self.CDM.model.users_emb.parameters(),
+                                                    lr=self.CDM.config[
+                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
+                self.user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
             case 'Adam':
                 self.user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
                                                     lr=self.CDM.config[
@@ -510,7 +519,10 @@ class AbstractSelectionStrategy(ABC):
 
         match self.config['meta_trainer']:
             case 'GAP':
-                pass
+                self.user_params_optimizer = torch.optim.SGD(self.CDM.model.users_emb.parameters(),
+                                                    lr=self.CDM.config[
+                                                        'inner_user_lr'])  # todo : Decide How to use a scheduler
+                self.user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
             case 'Adam':
                 self.user_params_optimizer = torch.optim.Adam(self.CDM.model.users_emb.parameters(),
                                                     lr=self.CDM.config[
@@ -568,6 +580,8 @@ class AbstractSelectionStrategy(ABC):
 
             train_dataset.set_query_seed(ep) # changes the meta and query set for each epoch
 
+            meta_loss = 0
+
             for u_batch, batch in enumerate(train_loader): # UserCollate directly load the data into the query environment
                 
                 logging.debug(f'----- User batch : {u_batch}')
@@ -576,7 +590,6 @@ class AbstractSelectionStrategy(ABC):
 
                 # Prepare the meta set
                 meta_data = train_query_env.generate_IMPACT_meta()
-                nb_modalities = train_dataset.nb_modalities[meta_data['questions_id']]
 
                 for i_query in range(self.config['n_query']):
 
@@ -585,13 +598,14 @@ class AbstractSelectionStrategy(ABC):
                     actions = self.select_action(train_query_env.get_query_options(i_query))
                     train_query_env.update(actions, i_query)
 
-                    self.inner_loop(train_query_env.feed_IMPACT_sub(),meta_data)
+                    i_query_data = train_query_env.feed_IMPACT_sub()
+
+                    self.inner_loop(i_query_data,meta_data)
+
+                meta_loss += self._loss_function(i_query_data["user_ids"], i_query_data["question_ids"], i_query_data["labels"], i_query_data["category_ids"])
                     
-                self.update_S_params(users_id=meta_data['users_id'],
-                                     items_id=meta_data['questions_id'],
-                                     labels=meta_data['labels'],
-                                     concepts_id=meta_data['categories_id'])
-                #self.update_CDM_params(m_user_ids, m_question_ids, m_labels, m_category_ids)
+            self.update_S_params(meta_loss)
+            self.update_CDM_params(meta_loss)
 
             # Early stopping
             if (ep + 1) % eval_freq == 0:
