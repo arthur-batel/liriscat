@@ -136,7 +136,44 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
                      num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                      i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                     inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
+                     inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer: str = 'Adam', num_workers: int = 0) -> dict:
+    """
+  Generate a configuration dictionary for the model training and inference.
+
+  Args:
+      dataset_name (str): Name of the dataset. Default is None.
+      seed (int): Random seed for reproducibility. Default is 0.
+      load_params (bool): Whether to load model parameters from a file. Default is False.
+      save_params (bool): Whether to save model parameters to a file. Default is False.
+      embs_path (str): Path to the directory where embeddings will be saved. Default is '../embs/'.
+      params_path (str): Path to the directory whe re model parameters will be saved. Default is '../ckpt/'.
+      early_stopping (bool): Whether to use early stopping during training. Default is True.
+      esc (str): Early stopping criterion. Possible values: 'error', 'loss', 'delta_error', 'objectives'. Default is 'error'.
+      verbose_early_stopping (str): Whether to print model learning statistics during training (frequency = eval_freq). Default is False.
+      disable_tqdm (bool): Whether to disable tqdm progress bars. Default is True.
+      valid_metric (str): Metric to be used for hyperparameters selection on the valid dataset (including early stopping). Possible values: 'rmse', 'mae', 'mi_acc'. Default is 'rmse'.
+      learning_rate (float): Learning rate for the optimizer. Default is 0.001.
+      batch_size (int): Batch size for training. Default is 2048.
+      valid_batch_size (int): Batch size for validation. Default is 10000.
+      num_epochs (int): Number of epochs for training. (Maximum number if early stopping) Default is 200.
+      eval_freq (int): Frequency of evaluation during training. Default is 1.
+      patience (int): Patience for early stopping. Default is 30.
+      device (str): Device to be used for training (e.g., 'cpu' or 'cuda'). Default is None.
+      lambda_ (float): Regularization parameter. Default is 7.7e-6.
+      tensorboard (bool): Whether to use TensorBoard for logging. Default is False.
+      flush_freq (bool): Whether to flush the TensorBoard logs frequently. Default is True.
+      pred_metrics (list): List of prediction metrics to be used for evaluation. Possible list elements: 'rmse', 'mae', 'r2', 'mi_acc', 'mi_prec', 'mi_rec', 'mi_f1', 'mi_auc' (mi = micro-averaged). Default is ['rmse', 'mae'].
+      profile_metrics (list): List of profile metrics to be used for evaluation. Possible list elements: 'doa', 'pc-er', 'rm'. Default is ['doa', 'pc-er'].
+      num_responses (int): Number of responses IMPACT will use for each question in the case of dataset with continuous values. For discrete datasets, num_responses is the MAXIMUM number of responses IMPACT will use for each question. Default is 12.
+      low_mem (bool): Whether to enable low memory mode for IMPACT with vector subspaces for question-response embeddings. Default is False.
+      n_query (int) : Number of question to submit to users. Default is 10.
+      CDM (str): Name of the CDM to be used. Default is 'impact'.
+      i_fold (int): Fold number for cross-validation. Default is 0.
+      meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
+     num_workers (int): Number of subprocesses to use for loading data in PyTorch DataLoader. Should be <= the number of CPU cores available. Increasing this can speed up data loading and improve GPU training throughput. Default is 0.
+  Returns:
+      dict: Configuration dictionary with the specified parameters.
+  """
     if device is None:
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -178,6 +215,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         "inner_lr": inner_lr,
         "inner_user_lr": inner_user_lr,
         'meta_trainer':meta_trainer,
+        'num_workers': num_workers,
     }
 
 
@@ -192,7 +230,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
                        num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                        i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                       inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
+                       inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer: str = 'Adam', num_workers: int = 0) -> dict:
     """
         Generate a configuration dictionary for the model hyperparameter search process.
 
@@ -226,6 +264,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
             CDM (str): Name of the CDM to be used. Default is 'impact'.
             i_fold (int): Fold number for cross-validation. Default is 0.
             meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
+            num_workers (int): Number of subprocesses to use for loading data in PyTorch DataLoader. Should be <= the number of CPU cores available. Increasing this can speed up data loading and improve GPU training throughput. Default is 0.
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
@@ -240,7 +279,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                             profile_metrics=profile_metrics,
                             num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
                             num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
-                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,meta_trainer=meta_trainer)
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr, meta_trainer=meta_trainer, num_workers=num_workers)
 
 
 def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: bool = False,
@@ -255,7 +294,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                          profile_metrics: list = ['doa', 'pc-er'],
                          num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
                          i_fold: int = 0, num_inner_users_epochs: int = 10, num_inner_epochs: int = 10,
-                         inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer:str='Adam') -> dict:
+                         inner_lr: float = 0.0001, inner_user_lr: float = 0.0001, meta_trainer: str = 'Adam', num_workers: int = 0) -> dict:
     """
         Generate a configuration dictionary for the model evaluation.
 
@@ -289,6 +328,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
             CDM (str): Name of the CDM to be used. Default is 'impact'.
             i_fold (int): Fold number for cross-validation. Default is 0.
             meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
+            num_workers (int): Number of subprocesses to use for loading data in PyTorch DataLoader. Should be <= the number of CPU cores available. Increasing this can speed up data loading and improve GPU training throughput. Default is 0.
         Returns:
             dict: Configuration dictionary with the specified parameters.
         """
@@ -303,7 +343,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             profile_metrics=profile_metrics,
                             num_responses=num_responses, low_mem=low_mem, n_query=n_query, CDM=CDM, i_fold=i_fold,
                             num_inner_users_epochs=num_inner_users_epochs, num_inner_epochs=num_inner_epochs,
-                            inner_lr=inner_lr, inner_user_lr=inner_user_lr,meta_trainer=meta_trainer)
+                            inner_lr=inner_lr, inner_user_lr=inner_user_lr, meta_trainer=meta_trainer, num_workers=num_workers)
 
 
 def convert_config_to_EduCAT(config, metadata, strategy_name: str, threshold: float = None, betas: float = None,
