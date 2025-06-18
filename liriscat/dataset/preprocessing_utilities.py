@@ -55,31 +55,7 @@ def remove_duplicates(data: pd.DataFrame, key_attrs: List[str], agg_attrs: List[
 
     :param data: Dataset as a pandas.DataFrame
     :type data: pd.DataFrame
-def split_data_horizontally(df):
-    train = []
-    valid = []
-
-    for i_group, group in df.groupby('student_id'):
-        group_idxs = group.index.values
-
-        train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
-
-        train.extend(group.loc[train_item_idx].values.tolist())
-        valid.extend(group.loc[valid_item_idx].values.tolist())
-
-    return train, validdef split_data_horizontally(df):
-        train = []
-        valid = []
-
-        for i_group, group in df.groupby('student_id'):
-            group_idxs = group.index.values
-
-            train_item_idx, valid_item_idx = train_test_split(group_idxs, test_size=0.2, shuffle=True)
-
-            train.extend(group.loc[train_item_idx].values.tolist())
-            valid.extend(group.loc[valid_item_idx].values.tolist())
-
-        return train, valid    :param key_attrs: Attributes whose combination must be unique
+    :param key_attrs: Attributes to group by for identifying unique records
     :type key_attrs: List[str]
     :param agg_attrs: Attributes to aggregate in a set for every unique key
     :type agg_attrs: List[str]
