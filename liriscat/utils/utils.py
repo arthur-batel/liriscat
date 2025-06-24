@@ -172,6 +172,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
       meta_trainer (str): Name of the meta trainer to be used. Default is 'Adam'. Possible values: 'Adam', 'GAP'
      num_workers (int): Number of subprocesses to use for loading data in PyTorch DataLoader. Should be <= the number of CPU cores available. Increasing this can speed up data loading and improve GPU training throughput. Default is 0.
      pin_memory (bool): If True, the DataLoader will copy Tensors into CUDA pinned memory before returning them, speeding up host-to-GPU transfer. Recommended True. Default is False.
+     debug (bool): If True, the logger will be set to DEBUG level. Default is False.
   Returns:
       dict: Configuration dictionary with the specified parameters.
   """
@@ -182,6 +183,8 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         else:
             device = torch.device("cpu")
             print("CUDA is not available. Using CPU.")
+
+    current_level = logging.getLogger().getEffectiveLevel()
     return {
         'seed': seed,
         'dataset_name': dataset_name,
@@ -218,6 +221,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
         'meta_trainer': meta_trainer,
         'num_workers': num_workers,
         'pin_memory': pin_memory,
+        'debug': logging.getLevelName(current_level)=="DEBUG", 
     }
 
 
@@ -445,16 +449,9 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
 
     return s / beta
 
-def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map):
     R1 = np.vstack((R_train, R_valid))
     R2 = R_test
-    n_train = R_train.shape[0]
-    n_valid = R_valid.shape[0]
-    n_test = R_test.shape[0]
-
-    # Conversion des ensembles en np.ndarray
-    U1 = np.array(list(U1), dtype=np.int64)
-    U2 = np.array(list(U2), dtype=np.int64)
 
     q1 = {}
     q2 = {}
@@ -508,21 +505,14 @@ def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map, 
     # You can either filter concept_indices there or ensure _preprocess_concept_map
     # doesn't produce out-of-range indices.
 
-    U_train_global = np.array(U1[:n_train], dtype=np.int64).reshape(-1)
-    U_valid_global = np.array(U1[n_train:], dtype=np.int64).reshape(-1)
-    U_test_global = np.array(U2, dtype=np.int64).reshape(-1)
     R = np.vstack((R_train, R_valid, R_test))
 
-    return _compute_doa_train_test(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R, U_train_global,
-                                   U_valid_global, U_test_global)
+    return _compute_doa_train_test(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R)
 
 @numba.jit(nopython=True, cache=True)
-def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R, U_train, U_valid, U_test):
+def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R):
     s = np.zeros((1, num_dim))
     beta = np.zeros((1, num_dim))
-
-    U1 = np.concatenate((U_train, U_valid))
-    U2 = U_test
 
     for i in range(len(q1)):
         concept_indices = concept_map_array[i]
@@ -567,9 +557,9 @@ def compute_doa(emb: torch.Tensor, test_data):
     return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
                                 test_data.concept_map))
 
-def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map, U1, U2):
+def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map):
 
-    return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map, U1, U2))
+    return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map))
 
 def compute_pc_er(emb, test_data):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,

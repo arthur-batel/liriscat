@@ -35,13 +35,14 @@ class CATIMPACT(IMPACT) :
         super().__init__(**config)
         self.initialized_users_prior = False
         
-    def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
+    def init_CDM_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
 
         # Replacement of pretrained users embeddings with randomly generated ones
         self.init_users_prior(train_data, valid_data)
-            
-
+        self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
+        self.model.R_train = train_data.log_tensor + valid_data.log_tensor
+        
     def get_regularizer_with_pior(self,unique_users, unique_items):    
         A = (self.model.users_emb.weight[unique_users] - self.model.prior_mean) 
         S = self.model.prior_cov_inv
@@ -52,15 +53,14 @@ class CATIMPACT(IMPACT) :
     def get_params(self):
         return self.model.state_dict()
 
-
     def init_test(self, test_data):
         self.model.R = test_data.log_tensor
         self.model.ir_idx = resp_to_mod(self.model.R, self.model.nb_modalities)
         self.model.ir_idx = self.model.ir_idx.to(self.config['device'], non_blocking=True)    
 
-    def init_users_prior(self, train_data, valid_data):
+    def reset_train_valid_users(self, train_data, valid_data):
         """
-        Initialize users embedding and set the regularization term based on the posterior distribution learned on train and valid users.
+        Initialize users embedding based on the posterior distribution learned on train and valid users.
         """
         train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)),device=self.config['device'])
         train_valid_users = train_valid_users.to(dtype=torch.long)
@@ -73,8 +73,20 @@ class CATIMPACT(IMPACT) :
 
         E = torch.normal(ave.expand(train_data.n_users, -1), std.expand(train_data.n_users, -1)/2)
         E = E - E.mean(dim=0) + ave
-        with torch.no_grad():
-            self.model.users_emb.weight.data = E.to(self.config['device'])
+
+        return nn.Parameter(E.requires_grad_(True).to(self.config['device']))
+
+    def init_users_prior(self, train_data, valid_data):
+        """
+        Set the regularization term based on the posterior distribution learned on train and valid users.
+        """
+        train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)),device=self.config['device'])
+        train_valid_users = train_valid_users.to(dtype=torch.long)
+        
+        # NO data leak to test dataset because we only look at the train and valid users 
+        user_embeddings = self.model.users_emb(train_valid_users).float().detach()
+        
+        ave = user_embeddings.mean(dim=0)
 
         cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
@@ -84,32 +96,70 @@ class CATIMPACT(IMPACT) :
         
         self.initialized_users_prior = True
 
-    def _loss_function(self, users_id, items_id, concepts_id=None, labels=None):
+    def _loss_function(self, users_id, items_id, concepts_id, labels):
         return self._compute_loss(users_id, items_id, concepts_id, labels)
 
-    def _compute_loss(self, users_id, items_id, concepts_id=None, labels=None):
+    def _compute_loss(self, users_id, items_id, concepts_id, labels, learning_users_emb):
 
         lambda_param = self.config['lambda']
 
-        u_emb = self.get_users_emb(users_id)
-        
         im_emb_prime = self.get_modalities_emb(items_id)
 
-        L1 = custom_l1(u_emb=u_emb,
+        nb_items_modalities = self.model.nb_modalities[items_id]
+
+        L1, L3 = custom_l1(learning_users_emb=learning_users_emb,
+            reference_users_emb=self.model.users_emb.weight,
             im_emb_prime=im_emb_prime,
             modalities_idx=self.model.ir_idx[users_id, items_id],
             nb_mod_max_plus_sent=self.model.nb_mod_max_plus_sent,
-            diff_mask=self.model.diff_mask[items_id])
-        
+            diff_mask=self.model.diff_mask[items_id],
+            users_id=users_id,
+            train_valid_users=self.model.train_valid_users, 
+            items_id=items_id,
+            concepts_id=concepts_id,
+            labels=labels,
+            R=self.model.R_train,
+            nb_items_modalities=nb_items_modalities)
+
         unique_users =  torch.unique(users_id)
         unique_items = torch.unique(items_id)
-        R = self.model.get_regularizer(unique_users, unique_items)
+
+        R = self.get_regularizer(unique_users, unique_items, learning_users_emb)
+
+        # Stack losses into a tensor
+        #losses = torch.stack([L1, L3])  # Shape: (4,)
+
+        # Update statistics and compute weights
+        #weights = self.L_W.compute_weights(losses)
 
         # Compute total loss
-        total_loss = 1*L1 + lambda_param * R
+        total_loss = lambda_param * R + L1 + 5*L3  #torch.dot(weights, losses)
 
         return total_loss
     
+    def get_regularizer(self,unique_users, unique_items, learning_users_emb):
+        im_idx = self.model.im_idx[unique_items]  # [batch_size, nb_mod]
+        i0_idx = self.model.i0_idx[unique_items]  # [batch_size, nb_mod]
+        in_idx = self.model.in_idx[unique_items] 
+        return learning_users_emb[unique_users].norm().pow(2) + self.model.item_response_embeddings.weight[im_idx].norm().pow(
+            2) + self.model.item_response_embeddings.weight[i0_idx].norm().pow(
+            2)+ self.model.item_response_embeddings.weight[in_idx].norm().pow(
+            2)
+    
+    def forward(self, users_id, items_id, concepts_id, users_emb):
+        # I
+        im_idx = self.model.im_idx[items_id]
+        im_emb = self.model.item_response_embeddings(im_idx)
+
+        # E
+        u_emb = users_emb[users_id]
+
+        # p_uim
+        diff = u_emb.unsqueeze(1) - im_emb
+        p_uim = torch.sum(diff ** 2, dim=2)
+
+        return mod_to_resp(torch.argmin(p_uim + self.model.mask[items_id, :], dim=1), self.model.nb_modalities[items_id])
+
     
     def get_modalities_emb(self, items_id):
 
@@ -118,24 +168,23 @@ class CATIMPACT(IMPACT) :
         im_emb_prime = self.model.item_response_embeddings(im_idx)  # [batch_size, nb_mod, embedding_dim]
 
         return im_emb_prime
-    
-    def get_users_emb(self, users_id):
-        u_emb = self.model.users_emb(users_id)
-
-        return u_emb
-
-
-
-    def get_KLI(self, query_data) :
-
-        preds = self.model(query_data)
 
 @torch.jit.script
-def custom_l1(u_emb: torch.Tensor,
+def custom_l1(learning_users_emb: torch.Tensor,
+              reference_users_emb: torch.Tensor, # fixed users embeddings
             im_emb_prime: torch.Tensor,
             modalities_idx: torch.Tensor,
             nb_mod_max_plus_sent: int,
-            diff_mask: torch.Tensor):
+            diff_mask: torch.Tensor,
+            users_id: torch.Tensor,
+            train_valid_users: torch.Tensor,
+            items_id: torch.Tensor,
+            concepts_id: torch.Tensor,
+            labels: torch.Tensor,
+            R: torch.Tensor,
+            nb_items_modalities: torch.Tensor):
+    
+    u_emb = learning_users_emb[users_id]
 
 
     diff = u_emb.unsqueeze(1) - im_emb_prime
@@ -156,8 +205,33 @@ def custom_l1(u_emb: torch.Tensor,
 
     L1 = torch.where(diff_mask == 1, F.softplus((less_mask.int() - greater_mask.int()) * diffs),
                      torch.zeros_like(diff_mask)).mean(dim=1).mean()
+    
+    ##### L3
+    R_t = R[train_valid_users][:, items_id].t() # responses to compare to
+    b = (labels.unsqueeze(1) - R_t)
 
-   
-    return L1
+    b_diag = b.abs()
 
+    u_mask = (b_diag > 0.0) & (R_t >= 1.0) & (b_diag <= (2/nb_items_modalities).unsqueeze(1))   # b_diag > 0 : not exactly similar responses for which we cannot say anything; R_t >= 1.0 : comparison with not null responses only
 
+    indices = torch.nonzero(u_mask)
+    u_base_idx = indices[:, 0]
+    u_comp_idx = indices[:, 1] # responses to compare to
+    
+    u_base_emb = learning_users_emb[users_id[u_base_idx], concepts_id[u_base_idx]]
+    u_comp_emb = reference_users_emb[train_valid_users[u_comp_idx], concepts_id[u_base_idx]]
+    
+    sign_b = b[u_base_idx, u_comp_idx].sign()
+    diff_emb = u_base_emb - u_comp_emb
+    q_val = 1.0 - sign_b * diff_emb
+
+    L3 = torch.clamp(q_val, min=0.0).mean()
+
+    return L1, L3  # L3 is not used in this implementation, returning 0
+
+@torch.jit.script
+def mod_to_resp(indexes: torch.Tensor, nb_modalities: torch.Tensor):
+    indexes = indexes - 1  # sentinels remove -> [0,nb_modalities-1]
+    responses = indexes / (nb_modalities - 1)  # -> [0,1]
+    responses = responses + 1  # -> [1,2]
+    return responses
