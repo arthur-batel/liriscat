@@ -113,7 +113,7 @@ class AbstractSelectionStrategy(ABC):
             'pc-er': utils.compute_pc_er,
             'doa': utils.compute_doa,
             'rm': utils.compute_rm,
-            'meta_doa': utils.compute_doa_train_test,
+            'meta_doa': utils.compute_meta_doa,
         }
         assert set(self.profile_metrics).issubset(self.profile_metric_functions.keys())
 
@@ -447,22 +447,9 @@ class AbstractSelectionStrategy(ABC):
         results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]), torch.cat(nb_modalities_list[t])).cpu().item()
                    for metric in self.pred_metrics} for t in range(self.config['n_query'])}
 
-        # results_profiles = {t : {metric: self.profile_metric_functions[metric](emb_tensor[:,t,:], test_dataset)
-        #            for metric in self.profile_metrics} for t in range(self.config['n_query'])}
         results_profiles = {
             t: {
-                metric: (
-                    self.profile_metric_functions[metric](
-                        emb_tensor[t,:, :],
-                        train_dataset.log_tensor.cpu().numpy(),  # train
-                        valid_dataset.log_tensor.cpu().numpy(),  # valid
-                        test_dataset.log_tensor.cpu().numpy(),  # test
-                        test_dataset.metadata,
-                        test_dataset.concept_map,
-                    )
-                    if metric == "meta_doa"
-                    else self.profile_metric_functions[metric](emb_tensor[t,:, :], test_dataset)
-                )
+                metric: self.profile_metric_functions[metric](emb_tensor[t,:, :], test_dataset, train_dataset, valid_dataset)
                 for metric in self.profile_metrics
             }
             for t in range(self.config["n_query"])

@@ -449,8 +449,15 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
 
     return s / beta
 
-def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map):
-    R1 = np.vstack((R_train, R_valid))
+def evaluate_meta_doa(E, test_data,train_data, valid_data):
+    R_train = train_data.log_tensor.cpu().numpy()
+    R_valid = valid_data.log_tensor.cpu().numpy()
+    R_test = test_data.log_tensor.cpu().numpy()
+
+    metadata = train_data.metadata
+    concept_map = train_data.concept_map
+
+    R1 = R_train + R_valid
     R2 = R_test
 
     q1 = {}
@@ -501,16 +508,12 @@ def evaluate_doa_train_test(E, R_train, R_valid, R_test, metadata, concept_map):
 
     num_dim = metadata['num_dimension_id']
 
-    # Optionally ensure concept indices are in range inside _compute_doa:
-    # You can either filter concept_indices there or ensure _preprocess_concept_map
-    # doesn't produce out-of-range indices.
+    R = R_train+R_valid+R_test
 
-    R = np.vstack((R_train, R_valid, R_test))
-
-    return _compute_doa_train_test(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R)
+    return _compute_meta_doa(q1_array, q2_array, q1_len, q2_len, num_dim, E, concept_map_array, R)
 
 @numba.jit(nopython=True, cache=True)
-def _compute_doa_train_test(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R):
+def _compute_meta_doa(q1, q2,q1_len,q2_len, num_dim, E, concept_map_array, R):
     s = np.zeros((1, num_dim))
     beta = np.zeros((1, num_dim))
 
@@ -553,15 +556,15 @@ def _preprocess_concept_map(list_concept_map, max_len):
     return concept_map_array
 
 
-def compute_doa(emb: torch.Tensor, test_data):
+def compute_doa(emb: torch.Tensor, test_data, train_data=None, valid_data=None):
     return np.mean(evaluate_doa(emb.cpu().numpy(), test_data.meta_tensor.cpu().numpy(), test_data.metadata,
                                 test_data.concept_map))
 
-def compute_doa_train_test(emb: torch.Tensor, R_train, R_valid, R_test, metadata, concept_map):
+def compute_meta_doa(emb: torch.Tensor, test_data,train_data, valid_data):
 
-    return np.mean(evaluate_doa_train_test(emb.cpu().numpy(),R_train,R_valid,R_test,metadata,concept_map))
+    return np.mean(evaluate_meta_doa(emb.cpu().numpy(), test_data,train_data, valid_data))
 
-def compute_pc_er(emb, test_data):
+def compute_pc_er(emb, test_data, train_data=None, valid_data=None):
     U_resp_sum = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
                                                                                   non_blocking=True)
     U_resp_nb = torch.zeros(size=(test_data.n_users, test_data.n_categories)).to(test_data.raw_data_array.device,
@@ -618,7 +621,7 @@ def pc_er(concept_n: int, U_ave: torch.Tensor, emb: torch.Tensor) -> torch.Tenso
     return torch.stack(results).nanmean()
 
 
-def compute_rm(emb: torch.Tensor, test_data):
+def compute_rm(emb: torch.Tensor, test_data, train_data=None, valid_data=None):
     logging.warning("Computing RM on meta and QUERY set")
     concept_array, concept_lens = preprocess_concept_map(test_data.concept_map)
     r = compute_rm_fold(emb.cpu().numpy(), test_data.df.to_records(index=False,
