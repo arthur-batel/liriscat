@@ -179,7 +179,7 @@ class AbstractSelectionStrategy(ABC):
 
             self.model.eval()
 
-    def GAP_inner_step(self, users_id, questions_id, labels, categories_id, users_emb=None):
+    def GAP_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
         Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
         Args:
@@ -192,7 +192,7 @@ class AbstractSelectionStrategy(ABC):
         
         # 2. Forward pass: compute loss using the copied embeddings
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
-        loss = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, users_emb=users_emb)
+        loss = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
 
         # 3. Compute gradients w.r.t. the copied embeddings
         grads = torch.autograd.grad(loss, users_emb, create_graph=True)
@@ -350,7 +350,7 @@ class AbstractSelectionStrategy(ABC):
 
                 learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data, learning_users_emb)
 
-            preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], learning_users_emb=learning_users_emb)
+            preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
             total_loss = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
 
             loss_list.append(total_loss.detach())
@@ -597,9 +597,11 @@ class AbstractSelectionStrategy(ABC):
                 
                     learning_users_emb = self.inner_loop(i_query_data,meta_data,learning_users_emb)
 
-                meta_loss = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], users_emb=learning_users_emb)
+                meta_loss = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
 
-            learning_users_emb.copy_(orig_emb)
+            with torch.no_grad():
+                learning_users_emb.copy_(orig_emb)
+            learning_users_emb.requires_grad_(True)
 
             if self.config['meta_trainer'] != 'Adam':
                 self.update_meta_params(meta_loss)
@@ -620,7 +622,9 @@ class AbstractSelectionStrategy(ABC):
                     if self.metric_sign * self.best_valid_metric > self.metric_sign * valid_metric:  # (self.best_valid_metric - valid_rmse) / abs(self.best_valid_metric) > 0.001:
                         self.best_epoch = ep
                         self.best_valid_metric = valid_metric
-                        self.best_model_params = [self.model.state_dict(), self.meta_params.detach().clone()]
+                        self.best_model_params = [self.model.state_dict()]
+                        if self.meta_params is not None:
+                            self.best_model_params.append(self.meta_params.detach().clone())
 
                         self.S_scheduler.step(valid_loss)
 
@@ -628,7 +632,8 @@ class AbstractSelectionStrategy(ABC):
                         break
 
         self.model.load_state_dict(self.best_model_params[0])
-        self.meta_params = self.best_model_params[1].requires_grad_()
+        if self.meta_params is not None:
+            self.meta_params = self.best_model_params[1].requires_grad_()
 
     def reset_rng(self):
         """
