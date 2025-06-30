@@ -3,6 +3,7 @@ import itertools
 import warnings
 from abc import ABC, abstractmethod
 from torch import nn
+from liriscat.selectionStrategy.CovWeighting import CoVWeightingLoss
 
 import numba
 import numpy as np
@@ -22,6 +23,8 @@ from torch.utils import data
 from tqdm import tqdm
 
 from liriscat.dataset import UserCollate, QueryEnv
+
+
 
 
 class AbstractSelectionStrategy(ABC):
@@ -80,18 +83,32 @@ class AbstractSelectionStrategy(ABC):
         match config['meta_trainer']:
             case 'GAP':
                 self.inner_step = self.GAP_inner_step
-                self.meta_params = torch.nn.Parameter(torch.empty(1, metadata['num_dimension_id']))
+                self.meta_params = torch.nn.Parameter(torch.empty(7, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data = self.meta_params.data + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+
+                self.meta_params.data[2,0] = torch.log(torch.exp(torch.tensor(self.config['lambda']*3))-1)
+                self.meta_params.data[2,1] = 15
+                self.meta_params.data[2,2] = 15
+
+                self.meta_params.data[3,:] = self.meta_params.data[3,:]+40
+                self.meta_params.data[4,:] = self.meta_params.data[4,:]+40
+                self.meta_params.data[5,:] = self.meta_params.data[5,:]+15
+                self.meta_params.data[6,:] = self.meta_params.data[6,:]+15
+
 
             case 'Adam':
                 self.inner_step = self.Adam_inner_step
                 self.meta_params = None
+                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])  # Initial weights for Adam inner step
             case 'none':
                 self.inner_step = None
             case _:
                 raise ValueError(f"Unknown meta trainer: {config['meta_trainer']}")
+        
+        self.L_W = torch.jit.script(CoVWeightingLoss(device=config['device']))
 
         ## Metric init
         self.pred_metric_functions = {
@@ -188,25 +205,37 @@ class AbstractSelectionStrategy(ABC):
             updated_users_emb: tensor of updated user embeddings (requires_grad)
             loss: loss on the query set
         """
-        
+        #meta_doa = torch.from_numpy(self.train_meta_doa(users_id, questions_id))
         # 2. Forward pass: compute loss using the copied embeddings
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
-        loss = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+        L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
 
+        losses = torch.stack([L1, L3])  # Shape: (4,)
+
+        # Update statistics and compute weights
+        self.weights = self.L_W.compute_weights(losses)
+        weights = self.weights
+        
         # 3. Compute gradients w.r.t. the copied embeddings
-        grads = torch.autograd.grad(loss, learning_users_emb, create_graph=True)
-        preconditioner = torch.nn.Softplus()(self.meta_params).repeat(self.metadata["num_user_id"], 1)
+        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
+        grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
+        grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
-        # 4. Meta-learning style SGD update (differentiable)
-        updated_users_emb = learning_users_emb - preconditioner * grads[0]
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+self.meta_params[3,:]*torch.nn.Sigmoid()(grads_L3[0]+self.meta_params[5,:])
+        prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)+self.meta_params[4,:]*torch.nn.Sigmoid()(grads_L1[0]+self.meta_params[6,:])
+        prec_R = torch.nn.Softplus()(self.meta_params[2,0]).repeat(self.metadata["num_user_id"], 1)
 
-        return updated_users_emb, loss
+        updated_users_emb = learning_users_emb - weights[0]*prec_L1 * grads_L1[0] - weights[1]*prec_L3 * grads_L3[0] - prec_R * grads_R[0] 
+
+
+        return updated_users_emb, prec_L1 * grads_L1[0] - prec_R * grads_R[0] + prec_L3 * grads_L3[0]
 
 
     def Adam_inner_step(self,users_id, questions_id, labels, categories_id, users_emb):
 
         self.user_params_optimizer.zero_grad()
-        loss = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
+        L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
+        loss = L1 + L3 + self.config['lambda'] * R
         loss.backward()
         self.user_params_optimizer.step()
         return users_emb, loss
@@ -241,7 +270,7 @@ class AbstractSelectionStrategy(ABC):
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
                             meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],users_emb=users_emb)                            
-                            
+
                     self.CDM.model.train()
                     users_emb, loss = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
                     self.CDM.model.eval()
@@ -343,9 +372,20 @@ class AbstractSelectionStrategy(ABC):
 
                 learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data, learning_users_emb)
 
-            total_loss = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
+            L1, L3, R = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
+            # 3. Compute gradients w.r.t. the copied embeddings
 
-            loss_list.append(total_loss.detach())
+            """ grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=True)
+            prec_L1 = torch.nn.Softplus()(self.meta_params[0,:].repeat(self.metadata["num_user_id"], 1)*grads_L3[0] +self.meta_params[1,:].repeat(self.metadata["num_user_id"], 1) )
+            prec_R = torch.nn.Softplus()(self.meta_params[2,0]).repeat(self.metadata["num_user_id"], 1) """
+
+            print(f"valid L1 : {L1}, valid L3 : {L3}, valid R : {R}")
+            losses = torch.stack([L1, L3])  # Shape: (4,)
+
+            # Update statistics and compute weights
+
+            total_loss = torch.dot(self.weights, losses)+self.config['lambda']*R
+            loss_list.append(total_loss)
 
         mean_loss = torch.mean(torch.stack(loss_list))
         learning_users_emb.copy_(orig_emb)
@@ -501,7 +541,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
-                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=1) #todo : wrap in a correct module
+                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=2) #todo : wrap in a correct module
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
             case 'Adam':
@@ -551,6 +591,8 @@ class AbstractSelectionStrategy(ABC):
                                   batch_size=self.config['valid_batch_size'],
                                   shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
         
+        self.train_meta_doa = lambda u,q : utils.train_meta_doa(self.CDM.model.users_emb.weight.detach(), learning_users_emb.detach(), train_dataset.log_tensor+ valid_dataset.log_tensor, train_dataset.log_tensor + valid_dataset.log_tensor, u, q, train_dataset.metadata, train_dataset.concept_map)
+        
         orig_emb = learning_users_emb.detach().clone()
 
         for _, ep in tqdm(enumerate(range(epochs + 1)), total=epochs, disable=self.config['disable_tqdm']):
@@ -584,10 +626,9 @@ class AbstractSelectionStrategy(ABC):
                     i_query_data = train_query_env.feed_IMPACT_sub()
                 
                     learning_users_emb = self.inner_loop(i_query_data,meta_data,learning_users_emb)
-
-
-
-                meta_loss = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
+                    
+                L1, L3, R = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
+                meta_loss = L1 + L3 + self.config['lambda']*R
                 mean_meta_loss += meta_loss / len(batch)
                     
             if self.config['meta_trainer'] != 'Adam':
@@ -645,3 +686,5 @@ class DummyScaler:
     def scale(self, loss): return loss
     def step(self, optimizer): pass
     def update(self): pass
+
+

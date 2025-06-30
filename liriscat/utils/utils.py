@@ -131,7 +131,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
                      verbose_early_stopping: str = False, disable_tqdm: bool = True,
                      valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
                      valid_batch_size: int = 10000,
-                     num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
+                     num_epochs: int = 200, eval_freq: int = 1, patience: int = 10,
                      device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                      flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = ['doa'],
                      num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
@@ -157,7 +157,7 @@ def _generate_config(dataset_name: str = None, seed: int = 0, load_params: bool 
       valid_batch_size (int): Batch size for validation. Default is 10000.
       num_epochs (int): Number of epochs for training. (Maximum number if early stopping) Default is 200.
       eval_freq (int): Frequency of evaluation during training. Default is 1.
-      patience (int): Patience for early stopping. Default is 30.
+      patience (int): Patience for early stopping. Default is 10.
       device (str): Device to be used for training (e.g., 'cpu' or 'cuda'). Default is None.
       lambda_ (float): Regularization parameter. Default is 7.7e-6.
       tensorboard (bool): Whether to use TensorBoard for logging. Default is False.
@@ -231,7 +231,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
                        verbose_early_stopping: str = False, disable_tqdm: bool = True,
                        valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
                        valid_batch_size: int = 10000,
-                       num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
+                       num_epochs: int = 200, eval_freq: int = 1, patience: int = 10,
                        device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                        flush_freq: bool = True, pred_metrics: list = ['rmse'], profile_metrics: list = [],
                        num_responses: int = 12, low_mem: bool = False, n_query: int = 10, CDM: str = 'impact',
@@ -257,7 +257,7 @@ def generate_hs_config(dataset_name: str = None, seed: int = 0, load_params: boo
             valid_batch_size (int): Batch size for validation. Default is 10000.
             num_epochs (int): Number of epochs for training. (Maximum number if early stopping) Default is 200.
             eval_freq (int): Frequency of evaluation during training. Default is 1.
-            patience (int): Patience for early stopping. Default is 30.
+            patience (int): Patience for early stopping. Default is 10.
             device (str): Device to be used for training (e.g., 'cpu' or 'cuda'). Default is None.
             lambda_ (float): Regularization parameter. Default is 7.7e-6.
             tensorboard (bool): Whether to use TensorBoard for logging. Default is False.
@@ -295,7 +295,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                          verbose_early_stopping: str = False, disable_tqdm: bool = False,
                          valid_metric: str = 'rmse', learning_rate: float = 0.001, batch_size: int = 2048,
                          valid_batch_size: int = 10000,
-                         num_epochs: int = 200, eval_freq: int = 1, patience: int = 30,
+                         num_epochs: int = 200, eval_freq: int = 1, patience: int = 10,
                          device: str = None, lambda_: float = 7.7e-6, tensorboard: bool = False,
                          flush_freq: bool = True, pred_metrics: list = ['rmse', 'mae', 'r2'],
                          profile_metrics: list = ['doa', 'pc-er'],
@@ -443,6 +443,94 @@ def _compute_doa(q, q_len, num_dim, E, concept_map_array, R):
                         beta[0, concept_indices[idx]] += E_i[u, idx] != E_i[v, idx]
 
     # Avoid division by zero
+    for idx in range(num_dim):
+        if beta[0, idx] == 0:
+            beta[0, idx] = 1
+
+    return s / beta
+
+def train_meta_doa(E_ref, E_train, R_ref, R_train, users_id, questions_id, metadata, concept_map):
+    R_ref = R_ref.cpu().numpy()
+    R_train = R_train.cpu().numpy()
+    E_ref = E_ref.cpu().numpy()
+    E_train = E_train.cpu().numpy()
+
+    q_ref = {}
+    q_train = {}
+
+    for r in range(metadata['num_item_id']):
+        q_ref[r] = []
+
+    for r in range(metadata['num_item_id']):
+        q_train[r] = []
+
+    for u, i in torch.tensor(R_ref).nonzero():
+        q_ref[i.item()].append(u.item())
+
+    for u, i in zip(users_id,questions_id):
+        q_train[i.item()].append(u.item())
+
+    max_concepts_per_item = 0
+    list_concept_map = []
+    for d in concept_map:
+        list_concept_map.append(concept_map[d])
+        l = len(concept_map[d])
+        if l > max_concepts_per_item:
+            max_concepts_per_item = l
+
+    list_q_ref = []
+    list_q_ref_len = []
+    for key in q_ref.keys():
+        list_q_ref.append(q_ref[key])
+        list_q_ref_len.append(len(q_ref[key]))
+
+    list_q_train = []
+    list_q_train_len = []
+    for key in q_train.keys():
+        list_q_train.append(q_train[key])
+        list_q_train_len.append(len(q_train[key]))
+
+    max_q_ref_len = max(len(q_ref_i) for q_ref_i in list_q_ref)
+    q_ref_array = _preprocess_list_q(list_q_ref, max_q_ref_len)
+    max_q_train_len = max(len(q_train_i) for q_train_i in list_q_train)
+    q_train_array = _preprocess_list_q(list_q_train, max_q_train_len)
+
+    concept_map_array = _preprocess_concept_map(list_concept_map, max_concepts_per_item)
+
+    # Convert q_len to a NumPy array
+    q_ref_len = np.array(list_q_ref_len, dtype=np.int32)
+    q_train_len = np.array(list_q_train_len, dtype=np.int32)
+
+    num_dim = metadata['num_dimension_id']
+
+    print("Computing training meta DOA...")
+
+    return _compute_training_meta_doa(q_ref_array, q_train_array, q_ref_len, q_train_len, num_dim, E_ref, E_train, concept_map_array, R_ref+R_train)
+
+@numba.jit(nopython=True, cache=True)
+def _compute_training_meta_doa(q_ref, q_train,q_ref_len,q_train_len, num_dim, E_ref, E_train, concept_map_array, R):
+    s = np.zeros((1, num_dim))
+    beta = np.zeros((1, num_dim))
+
+    for i in range(len(q_ref)):
+        concept_indices = concept_map_array[i]
+        concept_indices = concept_indices[(concept_indices >= 0) & (concept_indices < num_dim)]
+        E_ref_i = E_ref[:, concept_indices]
+        E_train_i = E_train[:, concept_indices]
+        q1_i_len = q_ref_len[i]
+        q2_i_len =q_train_len[i]
+        for u_i in range(q1_i_len - 1):
+            u = q_ref[i, u_i]
+            for v in q_train[i, : q2_i_len]:
+                if R[u, i] > R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_ref_i[u, idx] > E_train_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_ref_i[u, idx] != E_train_i[v, idx]
+                elif R[u, i] < R[v, i]:
+                    for idx in range(len(concept_indices)):
+                        s[0, concept_indices[idx]] += E_ref_i[u, idx] < E_train_i[v, idx]
+                        beta[0, concept_indices[idx]] += E_ref_i[u, idx] != E_train_i[v, idx]
+
     for idx in range(num_dim):
         if beta[0, idx] == 0:
             beta[0, idx] = 1
