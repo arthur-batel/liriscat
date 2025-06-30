@@ -22,7 +22,7 @@ class Random(AbstractSelectionStrategy):
 
         return remove_indices
 
-    def _loss_function(self,user_ids, question_ids, categories, labels):
+    def _loss_function(self, users_id, items_id, concepts_id, labels,users_emb):
         return torch.tensor([0.1], requires_grad = True)
 
 
