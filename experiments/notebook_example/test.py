@@ -81,6 +81,8 @@ for i_fold in range(1) :
     test_data.load_config(config)
 
     S = liriscat.selectionStrategy.Random(metadata,**config)
-    #S.train(train_data, valid_data)
     S.init_models(train_data, valid_data)
+    #S.train(train_data, valid_data)
+    liriscat.utils.set_seed(0)
+    S.reset_rng()
     print(S.evaluate_test(test_data))

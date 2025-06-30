@@ -6,7 +6,7 @@ class CATIRT(MIRT) :
     def __init__(self, **config):
         super().__init__(**config)
 
-    def init_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
+    def init_CDM_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
         super().init_model(train_data,valid_data)
 
 
