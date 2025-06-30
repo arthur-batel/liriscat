@@ -126,16 +126,7 @@ class CATIMPACT(IMPACT) :
 
         R = self.get_regularizer(unique_users, unique_items, learning_users_emb)
 
-        # Stack losses into a tensor
-        #losses = torch.stack([L1, L3])  # Shape: (4,)
-
-        # Update statistics and compute weights
-        #weights = self.L_W.compute_weights(losses)
-
-        # Compute total loss
-        total_loss = lambda_param * R + L1 + 5*L3  #torch.dot(weights, losses)
-
-        return total_loss
+        return L1, L3, R
     
     def get_regularizer(self,unique_users, unique_items, learning_users_emb):
         im_idx = self.model.im_idx[unique_items]  # [batch_size, nb_mod]
