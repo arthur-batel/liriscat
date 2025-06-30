@@ -46,7 +46,6 @@ class Dataset(IMPACTDataset):
             f'Some users have not enough logs to submit {self.config["n_query"]} questions, the support set is too small: min number of user logs = {self._metadata["min_nb_users_logs"]}'
 
         self._torch_array = torch.from_numpy(df.to_numpy()).to(device=self.device)
-        self._log_tensor = self._generate_log_tensor()  # precompute right away
         self._user_dict, self._user_id2idx, self._user_idx2id = self._generate_user_dict()
         self._cat_tensor, self._cat_mask, self._cat_nb = self._generate_qc_tensor()
         # flatten: [n_questions * cq_max]
@@ -55,6 +54,13 @@ class Dataset(IMPACTDataset):
         # offset[i] = i * cq_max
         self._cat_offset = (torch.arange(self.n_questions, device=self.device)
                             * self.cq_max)
+        
+    @property
+    def questions_id(self):
+        """
+        @return: Ids of the questions in this dataset instance (after splitting)
+        """
+        return self._questions_id
 
     @property
     def n_actual_users(self):
