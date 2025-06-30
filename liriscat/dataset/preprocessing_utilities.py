@@ -49,6 +49,7 @@ def stat_unique(data: pd.DataFrame, key):
         print('Number of unique {}: {}'.format(key, len(data[key].unique())))
     elif isinstance(key, list):
         print('Number of unique [{}]: {}'.format(','.join(key), len(data.drop_duplicates(key, keep='first'))))
+        
 def remove_duplicates(data: pd.DataFrame, key_attrs: List[str], agg_attrs: List[str]):
     """
     Remove duplicates from a DataFrame based on specified key attributes while aggregating other attributes.
@@ -427,14 +428,14 @@ def load_dataset_resources(config, base_path: str = "../2-preprocessed_data/"):
     nb_modalities = torch.load(f'../datasets/2-preprocessed_data/{config["dataset_name"]}_nb_modalities.pkl',weights_only=True)
     return concept_map, metadata, nb_modalities
 
-def horizontal_data(config, i_folds):
+def vertical_data(config, i_fold):
 
     train = pd.read_csv(
-    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_folds}.csv',
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_train_{i_fold}.csv',
     encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
                                                              "dimension_id": int})
     valid= pd.read_csv(
-    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_folds}.csv',
+    f'../datasets/2-preprocessed_data/{config["dataset_name"]}_vert_valid_{i_fold}.csv',
     encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
                                                              "dimension_id": int})
 
