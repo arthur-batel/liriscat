@@ -9,7 +9,6 @@ from functools import partial
 from ipyparallel import Client
 import dill
 import json
-import logging
 import gc
 import torch
 from liriscat.dataset.preprocessing_utilities import *
@@ -21,7 +20,8 @@ lview = rc.load_balanced_view()
 
 
 rc[:].execute("import sys; sys.path.append('"+cat_absolute_path+"')")
-logging.info("sys.path.append("+cat_absolute_path+")")
+
+print("sys.path.append("+cat_absolute_path+")")
 with rc[:].sync_imports():
     import json
     from IMPACT import utils as utils_IMPACT, model as model_IMPACT, dataset as dataset_IMPACT
@@ -34,7 +34,7 @@ def main(dataset_name, nb_trials, nb_jobs):
                                              pred_metrics=['rmse'])
 
     utils_IMPACT.set_seed(config["seed"])
-    logging.info(config['dataset_name'])
+    print(config['dataset_name'])
     train_data, valid_data, concept_map, metadata = load_dataset(config)
 
     study = optuna.create_study(
@@ -50,12 +50,13 @@ def main(dataset_name, nb_trials, nb_jobs):
     ## requirements : plotly, nbformat
     pareto_trials = study.best_trials
 
-    logging.info(f"Best trial for {config['dataset_name']} : {study.best_trials}")
+    print(f"Best trial for {config['dataset_name']} : {study.best_trials}")
     for trial in pareto_trials:
-        logging.info(f"Trial #{trial.number}")
-        logging.info(f"  Metric value: {trial.values}")
-        # logging.info(f"  DOA: {trial.values[1]}")
-        logging.info(f"  Params: {trial.params}")
+        print(f"Trial #{trial.number}")
+        print(f"  Metric value: {trial.values}")
+        # print(f"  DOA: {trial.values[1]}")
+        print(f"  Params: {trial.params}")
+
 
 if __name__ == '__main__':
     dataset_name = sys.argv[1]
