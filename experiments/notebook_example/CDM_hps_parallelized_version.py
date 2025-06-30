@@ -44,7 +44,7 @@ def main(dataset_name, nb_trials, nb_jobs):
     torch.cuda.empty_cache()
     objective_with_args = partial(utils_liriscat.objective_hps, config=config, train_data=train_data,
                                   valid_data=valid_data)
-    study.optimize(objective_with_args, n_trials=1, n_jobs=3, gc_after_trial=True)
+    study.optimize(objective_with_args, n_trials=nb_trials, n_jobs=nb_jobs, gc_after_trial=True)
 
     # Analyze the results
     ## requirements : plotly, nbformat
