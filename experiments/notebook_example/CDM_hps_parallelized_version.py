@@ -59,7 +59,7 @@ def main(dataset_name, nb_trials, nb_jobs):
 
 
 if __name__ == '__main__':
-    dataset_name = sys.argv[1]
-    nb_trials = int(sys.argv[2])
-    nb_jobs = int(sys.argv[3])
+    dataset_name = "math2"
+    nb_trials = "2"
+    nb_jobs = "1"
     main(dataset_name, nb_trials, nb_jobs)
