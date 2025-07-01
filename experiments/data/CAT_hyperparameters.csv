@@ -1,0 +1,2 @@
+CAT;dataset; valid_metric; best_valid_metric; best hyperparams
+Adam;math2;2.8829724590813495; {'learning_rate': 0.0014955810835230179, 'num_inner_users_epochs': 3}
