@@ -72,15 +72,15 @@ class AbstractSelectionStrategy(ABC):
                 case 'error':
                     self._train_method = self._train_early_stopping_error
 
-        match config['CDM']:
+        match self.config['CDM']:
             case 'impact':
-                self.CDM = CDM.CATIMPACT(**config)
+                self.CDM = CDM.CATIMPACT(**self.config)
             case 'irt':
-                irt_config = utils.convert_config_to_EduCAT(config, metadata)
+                irt_config = utils.convert_config_to_EduCAT(self.config, metadata)
                 self.CDM = CDM.CATIRT(**irt_config)
 
-        logging.debug(f'----- Meta trainer init : {config["meta_trainer"]}')
-        match config['meta_trainer']:
+        logging.debug(f'----- Meta trainer init : {self.config["meta_trainer"]}')
+        match self.config['meta_trainer']:
             case 'GAP':
                 self.inner_step = self.GAP_inner_step
                 self.meta_params = torch.nn.Parameter(torch.empty(7, metadata['num_dimension_id']))
@@ -205,7 +205,6 @@ class AbstractSelectionStrategy(ABC):
             updated_users_emb: tensor of updated user embeddings (requires_grad)
             loss: loss on the query set
         """
-        #meta_doa = torch.from_numpy(self.train_meta_doa(users_id, questions_id))
         # 2. Forward pass: compute loss using the copied embeddings
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
         L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
@@ -228,7 +227,7 @@ class AbstractSelectionStrategy(ABC):
         updated_users_emb = learning_users_emb - weights[0]*prec_L1 * grads_L1[0] - weights[1]*prec_L3 * grads_L3[0] - prec_R * grads_R[0] 
 
 
-        return updated_users_emb, prec_L1 * grads_L1[0] - prec_R * grads_R[0] + prec_L3 * grads_L3[0]
+        return updated_users_emb,  weights[0]*prec_L1 * L1 + weights[1] * prec_L3 * grads_L3[0] + prec_R * R
 
 
     def Adam_inner_step(self,users_id, questions_id, labels, categories_id, users_emb):
@@ -373,19 +372,10 @@ class AbstractSelectionStrategy(ABC):
                 learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data, learning_users_emb)
 
             L1, L3, R = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
-            # 3. Compute gradients w.r.t. the copied embeddings
 
-            """ grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=True)
-            prec_L1 = torch.nn.Softplus()(self.meta_params[0,:].repeat(self.metadata["num_user_id"], 1)*grads_L3[0] +self.meta_params[1,:].repeat(self.metadata["num_user_id"], 1) )
-            prec_R = torch.nn.Softplus()(self.meta_params[2,0]).repeat(self.metadata["num_user_id"], 1) """
-
-            print(f"valid L1 : {L1}, valid L3 : {L3}, valid R : {R}")
             losses = torch.stack([L1, L3])  # Shape: (4,)
-
-            # Update statistics and compute weights
-
             total_loss = torch.dot(self.weights, losses)+self.config['lambda']*R
-            loss_list.append(total_loss)
+            loss_list.append(total_loss/len(batch))
 
         mean_loss = torch.mean(torch.stack(loss_list))
         learning_users_emb.copy_(orig_emb)
@@ -541,7 +531,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
-                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=2) #todo : wrap in a correct module
+                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.5) #todo : wrap in a correct module
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
             case 'Adam':
@@ -628,7 +618,8 @@ class AbstractSelectionStrategy(ABC):
                     learning_users_emb = self.inner_loop(i_query_data,meta_data,learning_users_emb)
                     
                 L1, L3, R = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
-                meta_loss = L1 + L3 + self.config['lambda']*R
+                losses = torch.stack([L1, L3])  # Shape: (4,)
+                meta_loss = torch.dot(self.weights, losses)+self.config['lambda']*R
                 mean_meta_loss += meta_loss / len(batch)
                     
             if self.config['meta_trainer'] != 'Adam':
