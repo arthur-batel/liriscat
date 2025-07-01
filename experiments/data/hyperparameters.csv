@@ -1,0 +1,4 @@
+CDM; dataset; valid_metric; best_valid_metric; best hyperparams
+IMPACT; assist0910; mi_acc; 0.7606907486915588; {'learning_rate': 0.0016969685554352153, 'lambda': 2.2656270501845414e-06}
+IMPACT; math2; mi_acc; 0.7146506309509277; {'learning_rate': 0.016848380924625605, 'lambda': 9.972254466547545e-06}
+IMPACT; algebra; mi_acc; 0.8114831447601318; {'learning_rate': 0.0035820855736826453, 'lambda': 6.718720110057674e-06}
