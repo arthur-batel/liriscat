@@ -98,6 +98,13 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params.data[5,:] = self.meta_params.data[5,:]+15
                 self.meta_params.data[6,:] = self.meta_params.data[6,:]+15
 
+            case 'Approx_GAP':
+                self.inner_step = self.Approx_GAP_inner_step
+                self.meta_params = torch.nn.Parameter(torch.empty(1, metadata['num_dimension_id']))
+                torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
+                self.meta_params.data = self.meta_params.data.to(self.config['device'])
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
             case 'Adam':
                 self.inner_step = self.Adam_inner_step
@@ -229,7 +236,31 @@ class AbstractSelectionStrategy(ABC):
 
         return updated_users_emb,  weights[0]*prec_L1 * L1 + weights[1] * prec_L3 * grads_L3[0] + prec_R * R
 
+    def Approx_GAP_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
+        """
+        Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
+        Args:
+            users_id, questions_id, labels, categories_id: batch data
+            users_emb: optional tensor to use as starting point (default: model's current embeddings)
+        Returns:
+            updated_users_emb: tensor of updated user embeddings (requires_grad)
+            loss: loss on the query set
+        """
+        # 2. Forward pass: compute loss using the copied embeddings
+        #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
+        L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+        
+        # 3. Compute gradients w.r.t. the copied embeddings
+        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
+        grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
+        grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
+
+        updated_users_emb = learning_users_emb - prec_L1 * (self.weights[0]*grads_L1[0] + self.weights[1]* grads_L3[0]) - self.config['lambda'] * grads_R[0] 
+
+        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + self.config['lambda'] * R
+    
     def Adam_inner_step(self,users_id, questions_id, labels, categories_id, users_emb):
 
         self.user_params_optimizer.zero_grad()
@@ -238,6 +269,10 @@ class AbstractSelectionStrategy(ABC):
         loss.backward()
         self.user_params_optimizer.step()
         return users_emb, loss
+    
+    def Adam_inner_loss(self, L1,L3,R):
+
+        return (self.weights[0]*L1 + self.weights[1]* L3) + self.config['lambda'] * R
 
     def inner_loop(self,query_data, meta_data, users_emb):
         """
@@ -399,6 +434,8 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
             case 'GAP':
                 pass
+            case 'Approx_GAP':
+                pass
             case 'Adam':
                 self.user_params_optimizer = torch.optim.Adam(
                     [learning_users_emb],
@@ -534,6 +571,12 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.5) #todo : wrap in a correct module
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
+
+            case 'Approx_GAP':
+                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.5) #todo : wrap in a correct module
+                self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
+                self.meta_scaler = torch.amp.GradScaler(self.config['device'])
+
             case 'Adam':
                 self.user_params_optimizer = torch.optim.Adam(
                     [learning_users_emb],
