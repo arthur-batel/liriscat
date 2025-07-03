@@ -42,13 +42,7 @@ class CATIMPACT(IMPACT) :
         self.init_users_prior(train_data, valid_data)
         self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
         self.model.R_train = train_data.log_tensor + valid_data.log_tensor
-        
-    def get_regularizer_with_pior(self,unique_users, unique_items):    
-        A = (self.model.users_emb.weight[unique_users] - self.model.prior_mean) 
-        S = self.model.prior_cov_inv
-        SA_T = torch.matmul(A, S)  
-        
-        return torch.bmm(SA_T.unsqueeze(1), A.unsqueeze(2)).sum()
+    
 
     def get_params(self):
         return self.model.state_dict()
@@ -92,9 +86,17 @@ class CATIMPACT(IMPACT) :
 
         self.model.prior_cov_inv = torch.inverse(cov_matrix)
         self.model.prior_mean = ave.unsqueeze(0)
-        self.model.get_regularizer = functools.partial(self.get_regularizer_with_pior)
+        
+        self.get_regularizer = functools.partial(self.get_regularizer_with_prior)
         
         self.initialized_users_prior = True
+
+    def get_regularizer_with_prior(self,unique_users, unique_items, user_emb):    
+        A = (user_emb[unique_users] - self.model.prior_mean)  # [nb_users, d_in]
+        S = self.model.prior_cov_inv
+        SA_T = torch.matmul(A, S)  
+
+        return torch.bmm(SA_T.unsqueeze(1), A.unsqueeze(2)).sum()
 
     def _loss_function(self, users_id, items_id, concepts_id, labels):
         return self._compute_loss(users_id, items_id, concepts_id, labels)
