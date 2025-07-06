@@ -103,8 +103,6 @@ class CATIMPACT(IMPACT) :
 
     def _compute_loss(self, users_id, items_id, concepts_id, labels, learning_users_emb):
 
-        lambda_param = self.config['lambda']
-
         im_emb_prime = self.get_modalities_emb(items_id)
 
         nb_items_modalities = self.model.nb_modalities[items_id]
