@@ -356,36 +356,6 @@ class AbstractSelectionStrategy(ABC):
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
         L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
         
-        losses = torch.stack([L1, L3])  # Shape: (4,)
-
-        # Update statistics and compute weights
-        self.weights = self.L_W.compute_weights(losses)
-
-        # 3. Compute gradients w.r.t. the copied embeddings
-        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
-        grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
-        grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
-
-        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
-
-        updated_users_emb = learning_users_emb - prec_L1 * (self.weights[0]*grads_L1[0] + self.weights[1]* grads_L3[0]) - self.config['lambda'] * grads_R[0] 
-
-        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + self.config['lambda'] * R
-    
-    def Approx_GAP_mult_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
-        """
-        Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
-        Args:
-            users_id, questions_id, labels, categories_id: batch data
-            users_emb: optional tensor to use as starting point (default: model's current embeddings)
-        Returns:
-            updated_users_emb: tensor of updated user embeddings (requires_grad)
-            loss: loss on the query set
-        """
-        # 2. Forward pass: compute loss using the copied embeddings
-        #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
-        L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
-        
         # 3. Compute gradients w.r.t. the copied embeddings
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
