@@ -24,6 +24,22 @@ from tqdm import tqdm
 
 from liriscat.dataset import UserCollate, QueryEnv
 
+def inverse_softplus(x):
+    """
+    Compute the inverse of the softplus function.
+    
+    For numerical stability, uses different approaches based on input magnitude:
+    - For large x: log(x) (since softplus(y) ≈ y for large y)
+    - For small x: log(exp(x) - 1) (direct inverse)
+    
+    Args:
+        x: Input tensor
+        
+    Returns:
+        Inverse softplus of x
+    """
+    return torch.where(x > 20, torch.log(x), torch.log(torch.expm1(x)))
+
 
 
 
@@ -390,13 +406,10 @@ class AbstractSelectionStrategy(ABC):
         prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
         prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)
 
-        # Clamp meta_lambda to prevent numerical instability
-        clamped_meta_lambda = torch.clamp(self.meta_lambda, min=1e-8, max=100.0)
+        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - torch.nn.Softplus()(self.meta_lambda) * grads_R[0] 
 
-        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - clamped_meta_lambda * grads_R[0] 
+        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + self.meta_lambda * R
 
-        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + clamped_meta_lambda * R
-    
     
     def Approx_GAP_mult_cw_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
@@ -578,8 +591,8 @@ class AbstractSelectionStrategy(ABC):
 
             losses = torch.stack([L1, L3])  # Shape: (4,)
             # Use learnable meta_lambda if available, otherwise use config lambda
-            lambda_value = self.meta_lambda if hasattr(self, 'meta_lambda') else self.config['lambda']
-            total_loss = torch.dot(self.weights, losses) + lambda_value * R
+            #lambda_value = self.meta_lambda.detach().clone() if hasattr(self, 'meta_lambda') else self.config['lambda']
+            total_loss = torch.dot(self.weights, losses)# + lambda_value * R
             
             # Check for NaN and skip if found
 
@@ -783,14 +796,14 @@ class AbstractSelectionStrategy(ABC):
 
             case 'Approx_GAP_mult_lambda_prior':
                 self.meta_lambda = torch.nn.Parameter(
-                    torch.tensor(self.config['lambda']).clone(),
+                    inverse_softplus(torch.tensor(self.config['lambda'], device=self.device, dtype=torch.float32).clone()),
                     requires_grad=True
                 )
                 # You can pass parameter groups with individual learning rates:
                 self.meta_optimizer = torch.optim.Adam(
                     [
                         {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.5)},
-                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.0001)},
+                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.01)},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
@@ -994,8 +1007,8 @@ class AbstractSelectionStrategy(ABC):
                 L1, L3, R = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
                 losses = torch.stack([L1, L3])  # Shape: (4,)
                 # Use learnable meta_lambda if available, otherwise use config lambda
-                lambda_value = self.meta_lambda if hasattr(self, 'meta_lambda') else self.config['lambda']
-                meta_loss = torch.dot(self.weights, losses) + lambda_value * R
+                #lambda_value = self.meta_lambda.detach().clone() if hasattr(self, 'meta_lambda') else self.config['lambda']
+                meta_loss = torch.dot(self.weights, losses) #+ lambda_value * R
                 mean_meta_loss += meta_loss / len(batch)
                     
             if self.config['meta_trainer'] != 'Adam':
@@ -1030,24 +1043,24 @@ class AbstractSelectionStrategy(ABC):
                     if  self.best_valid_loss > valid_loss:  # (self.best_valid_metric - valid_rmse) / abs(self.best_valid_metric) > 0.001:
                         self.best_epoch = ep
                         self.best_valid_loss = valid_loss
-                        self.best_model_params = [self.model.state_dict()]
+                        self.best_model_params = {'state_dict': self.model.state_dict()}
                         if self.meta_params is not None:
-                            self.best_model_params.append(self.meta_params.detach().clone())
-                        if hasattr(self, 'meta_mean') : 
-                            self.best_model_params.append(self.meta_mean.detach().clone())
+                            self.best_model_params['meta_params'] = self.meta_params.detach().clone()
+                        if hasattr(self, 'meta_mean') :
+                            self.best_model_params['meta_mean'] = self.meta_mean.detach().clone()
                         if hasattr(self, 'meta_lambda') :
-                            self.best_model_params.append(self.meta_lambda.detach().clone())
+                            self.best_model_params['meta_lambda'] = self.meta_lambda.detach().clone()
 
                     if ep - self.best_epoch >= patience:
                         break
 
-        self.model.load_state_dict(self.best_model_params[0])
+        self.model.load_state_dict(self.best_model_params['state_dict'])
         if self.meta_params is not None:
-            self.meta_params = self.best_model_params[1].requires_grad_()
+            self.meta_params = self.best_model_params['meta_params'].requires_grad_()
         if hasattr(self, 'meta_mean') :
-            self.meta_mean = self.best_model_params[2].requires_grad_()
+            self.meta_mean = self.best_model_params['meta_mean'].requires_grad_()
         if hasattr(self, 'meta_lambda') :
-            self.meta_lambda = self.best_model_params[3].requires_grad_()
+            self.meta_lambda = self.best_model_params['meta_lambda'].requires_grad_()
 
 
     def reset_rng(self):
