@@ -635,6 +635,12 @@ class AbstractSelectionStrategy(ABC):
             case 'Approx_GAP_mult_full_prior':
                 pass
             case 'Adam':
+                self.user_params_optimizer = torch.optim.Adam(
+                    [learning_users_emb],
+                    lr=self.config['inner_user_lr']
+                )
+            case 'MAML':
+                logging.warning("The prior needs to be canged !")
                 self.CDM.reset_users_prior()
                 self.user_params_optimizer = torch.optim.Adam(
                     [learning_users_emb],
