@@ -495,8 +495,8 @@ class AbstractSelectionStrategy(ABC):
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_1 += utils.micro_ave_accuracy(labels,preds, nb_modalities)
                             sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds,meta_data['nb_modalities'])
-                            meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
-                            sum_meta_loss += meta_loss.item()
+                            L1,L3,R = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
+                            sum_meta_loss += (L1.item() + L3.item() + R.item())
 
                 if self.config['debug']:
                     logging.debug(
