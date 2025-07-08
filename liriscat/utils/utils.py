@@ -1041,7 +1041,7 @@ def micro_ave_auc(y_true, y_pred, nb_modalities):
 def macro_precision(y_true, y_pred, nb_modalities):
     y_true, y_pred = round_pred(y_true, y_pred, nb_modalities)
 
-    classes = torch.arange(nb_modalities.max)+1
+    classes = torch.arange(nb_modalities.max())+1
     precision_tensor = torch.zeros(len(classes))
 
     for i,cls in enumerate(classes):

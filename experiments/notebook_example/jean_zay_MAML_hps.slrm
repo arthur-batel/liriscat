@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=hps_parallel_assist0910_IMPACT
+#SBATCH --job-name=MAML_parallel_algebra_IMPACT_Adam
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --constraint=v100-16g
@@ -15,4 +15,4 @@ module purge
 module load pytorch-gpu/py3/2.7.0
 
 # Run multiple parallel processes, each one independently
-srun python CDM_hps_parallelized_version-SLURM.py 
+srun python MAML_hps_parallelized_version-SLURM.py 
