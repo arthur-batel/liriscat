@@ -445,8 +445,9 @@ class AbstractSelectionStrategy(ABC):
     def Adam_inner_step(self,users_id, questions_id, labels, categories_id, users_emb):
 
         self.user_params_optimizer.zero_grad()
-        L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
-        loss = L1 + L3 + self.config['lambda'] * R
+        unique_users =  torch.unique(users_id)
+        L1, L3, _ = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
+        loss = L1 + L3 + self.config['lambda'] * users_emb[unique_users].norm().pow(2)
         loss.backward()
         self.user_params_optimizer.step()
         return users_emb, loss
@@ -480,7 +481,7 @@ class AbstractSelectionStrategy(ABC):
                         with torch.no_grad() , torch.amp.autocast('cuda'):                    
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
-                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'])                            
+                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],users_emb=users_emb)                            
 
                     self.CDM.model.train()
                     users_emb, loss = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
