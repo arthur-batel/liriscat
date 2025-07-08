@@ -406,9 +406,11 @@ class AbstractSelectionStrategy(ABC):
         prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
         prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)
 
-        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - torch.nn.Softplus()(self.meta_lambda) * grads_R[0] 
+        # Use constrained lambda
+        lambda_value = torch.nn.functional.softplus(self.meta_lambda)
+        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - lambda_value * grads_R[0] 
 
-        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + self.meta_lambda * R
+        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + lambda_value * R
 
     
     def Approx_GAP_mult_cw_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
@@ -493,7 +495,7 @@ class AbstractSelectionStrategy(ABC):
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_1 += utils.micro_ave_accuracy(labels,preds, nb_modalities)
                             sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds,meta_data['nb_modalities'])
-                            meta_loss = self.CDM._compute_loss(learning_users_emb=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'])
+                            meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
                             sum_meta_loss += meta_loss.item()
 
                 if self.config['debug']:
@@ -636,13 +638,6 @@ class AbstractSelectionStrategy(ABC):
             case 'Approx_GAP_mult_full_prior':
                 pass
             case 'Adam':
-                self.user_params_optimizer = torch.optim.Adam(
-                    [learning_users_emb],
-                    lr=self.config['inner_user_lr']
-                )
-            case 'MAML':
-                logging.warning("The prior needs to be canged !")
-                self.CDM.reset_users_prior()
                 self.user_params_optimizer = torch.optim.Adam(
                     [learning_users_emb],
                     lr=self.config['inner_user_lr']
