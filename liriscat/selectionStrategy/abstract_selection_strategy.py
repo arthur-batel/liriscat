@@ -480,7 +480,7 @@ class AbstractSelectionStrategy(ABC):
                         with torch.no_grad() , torch.amp.autocast('cuda'):                    
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
-                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],learning_users_emb=users_emb)                            
+                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'])                            
 
                     self.CDM.model.train()
                     users_emb, loss = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
