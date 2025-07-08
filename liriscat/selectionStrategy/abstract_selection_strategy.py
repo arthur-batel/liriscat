@@ -450,10 +450,6 @@ class AbstractSelectionStrategy(ABC):
         loss.backward()
         self.user_params_optimizer.step()
         return users_emb, loss
-    
-    def Adam_inner_loss(self, L1,L3,R):
-
-        return (self.weights[0]*L1 + self.weights[1]* L3) + self.config['lambda'] * R
 
     def inner_loop(self,query_data, meta_data, users_emb):
         """
@@ -484,7 +480,7 @@ class AbstractSelectionStrategy(ABC):
                         with torch.no_grad() , torch.amp.autocast('cuda'):                    
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
-                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],users_emb=users_emb)                            
+                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],learning_users_emb=users_emb)                            
 
                     self.CDM.model.train()
                     users_emb, loss = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
@@ -496,7 +492,7 @@ class AbstractSelectionStrategy(ABC):
                             preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
                             sum_acc_1 += utils.micro_ave_accuracy(labels,preds, nb_modalities)
                             sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds,meta_data['nb_modalities'])
-                            meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],users_emb=users_emb)
+                            meta_loss = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
                             sum_meta_loss += meta_loss.item()
 
                 if self.config['debug']:
@@ -639,6 +635,7 @@ class AbstractSelectionStrategy(ABC):
             case 'Approx_GAP_mult_full_prior':
                 pass
             case 'Adam':
+                self.CDM.reset_users_prior()
                 self.user_params_optimizer = torch.optim.Adam(
                     [learning_users_emb],
                     lr=self.config['inner_user_lr']
