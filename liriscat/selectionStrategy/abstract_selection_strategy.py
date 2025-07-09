@@ -156,7 +156,7 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
 
             case 'Approx_GAP_mult_mean_prior':
-                self.inner_step = self.Approx_GAP_mult_inner_step
+                self.inner_step = self.Approx_GAP_mult_mean_prior_inner_step
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
@@ -272,6 +272,15 @@ class AbstractSelectionStrategy(ABC):
             self.model.train()
             self.meta_optimizer.zero_grad()
             self.meta_scaler.scale(loss).backward()
+
+            # Print gradients for debugging
+            if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
+                print(f"meta_params gradient norm: {self.meta_params.grad.norm()}")
+            if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
+                print(f"meta_mean gradient norm: {self.meta_mean.grad.norm()}")
+            if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
+                print(f"meta_lambda gradient norm: {self.meta_lambda.grad.norm()}")
+            
             
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
@@ -283,7 +292,7 @@ class AbstractSelectionStrategy(ABC):
                 
             self.meta_scaler.step(self.meta_optimizer)
             self.meta_scaler.update()
-
+            
             self.model.eval()
 
     def update_CDM_params(self, loss):
@@ -384,6 +393,40 @@ class AbstractSelectionStrategy(ABC):
 
         return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + self.config['lambda'] * R
     
+    def Approx_GAP_mult_mean_prior_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
+        """
+        Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
+        """
+        # Forward pass: compute loss using the copied embeddings
+        L1, L3, _ = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+
+        unique_users = torch.unique(users_id)
+        
+        # Compute custom regularizer: (E-M)Σ^(-1)(E-M)^T
+        A = learning_users_emb[unique_users] - torch.nn.Softplus()(self.meta_mean) * self.CDM.model.prior_mean  # Shape: [n_users, d_features]
+        S = self.CDM.model.prior_cov_inv.to(dtype=learning_users_emb.dtype, device=learning_users_emb.device)  # Ensure same dtype
+        
+        # Compute gradients w.r.t. learning_users_emb
+        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False, retain_graph=True)
+        grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False, retain_graph=True)
+        
+        # Compute analytical gradient of regularizer w.r.t. learning_users_emb
+        grads_R_tensor = torch.zeros_like(learning_users_emb)
+        # Analytical gradient: ∂R/∂E = 2(E-M)Σ^(-1)
+        grads_R_tensor[unique_users] = 2 * torch.matmul(A, S).to(dtype=learning_users_emb.dtype)  # 2(E-M)Σ^(-1)
+        
+        # Preconditioners
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
+        prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)
+        
+        # Update user embeddings
+        updated_users_emb = (learning_users_emb - 
+                            prec_L1 * self.weights[0] * grads_L1[0] - 
+                            prec_L3 * self.weights[1] * grads_L3[0] - 
+                            self.config['lambda'] * grads_R_tensor) 
+
+        return updated_users_emb, prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) 
+    
     def Approx_GAP_mult_lambda_prior_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
         Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
@@ -402,15 +445,13 @@ class AbstractSelectionStrategy(ABC):
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
-
+        
         prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
         prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)
 
-        # Use constrained lambda
-        lambda_value = torch.nn.functional.softplus(self.meta_lambda)
-        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - lambda_value * grads_R[0] 
+        updated_users_emb = learning_users_emb - prec_L1 * self.weights[0]*grads_L1[0] - prec_L3 * self.weights[1]* grads_L3[0] - torch.nn.Softplus()(self.meta_lambda) * grads_R[0]
 
-        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + lambda_value * R
+        return updated_users_emb,  prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) + torch.nn.Softplus()(self.meta_lambda) * R
 
     
     def Approx_GAP_mult_cw_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
@@ -586,12 +627,11 @@ class AbstractSelectionStrategy(ABC):
 
                 learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data, learning_users_emb)
 
-            L1, L3, R = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
+            L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
 
             losses = torch.stack([L1, L3])  # Shape: (4,)
-            # Use learnable meta_lambda if available, otherwise use config lambda
-            #lambda_value = self.meta_lambda.detach().clone() if hasattr(self, 'meta_lambda') else self.config['lambda']
-            total_loss = torch.dot(self.weights, losses)# + lambda_value * R
+            
+            total_loss = torch.dot(self.weights, losses)
             
             # Check for NaN and skip if found
 
@@ -802,7 +842,7 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_optimizer = torch.optim.Adam(
                     [
                         {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.5)},
-                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.01)},
+                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.5)},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
@@ -810,22 +850,16 @@ class AbstractSelectionStrategy(ABC):
 
             case 'Approx_GAP_mult_mean_prior':
                 self.meta_mean = torch.nn.Parameter(
-                    self.CDM.model.prior_mean.clone(),
+                    inverse_softplus(torch.tensor([1.0],
+                         device=self.config['device'],
+                         dtype=torch.float32)),
                     requires_grad=True
                 )
-                def get_regularizer_with_learnable_mean_prior(self,unique_users, unique_items,users_emb):   
-                    A = (users_emb[unique_users] - self.meta_mean) 
-                    S = self.CDM.model.prior_cov_inv
-                    SA_T = torch.matmul(A, S)  
-                    
-                    return torch.bmm(SA_T.unsqueeze(1), A.unsqueeze(2)).sum()   
-    
-                self.CDM.get_regularizer = functools.partial(get_regularizer_with_learnable_mean_prior,self)
-
+                
                 self.meta_optimizer = torch.optim.Adam(
                     [
                         {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.5)},
-                        {'params': self.meta_mean,  'lr': self.config.get('meta_mean_lr', 0.001)},
+                        {'params': self.meta_mean,  'lr': self.config.get('meta_mean_lr', 0.5)},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
@@ -837,7 +871,7 @@ class AbstractSelectionStrategy(ABC):
                     requires_grad=True
                 )
                 self.meta_lambda = torch.nn.Parameter(
-                    torch.tensor(self.config['lambda'], device=self.config['device']).clone(),
+                    inverse_softplus(torch.tensor(self.config['lambda'], device=self.config['device'], dtype=torch.float32)),
                     requires_grad=True
                 )
 
@@ -854,9 +888,9 @@ class AbstractSelectionStrategy(ABC):
                 # You can pass parameter groups with individual learning rates:
                 self.meta_optimizer = torch.optim.Adam(
                     [
-                        {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.1)},
-                        {'params': self.meta_mean,  'lr': self.config.get('meta_mean_lr', 0.0001)},
-                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.00001)},
+                        {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.5)},
+                        {'params': self.meta_mean,  'lr': self.config.get('meta_mean_lr', 0.001)},
+                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.001)},
                     ]
                 )
                 
@@ -926,6 +960,12 @@ class AbstractSelectionStrategy(ABC):
                     lr=self.config['inner_user_lr']
                 )
                 self.user_params_scaler = torch.amp.GradScaler(self.CDM.config['device'])
+            case 'MAML':
+                logging.warning("The prior needs to be canged !")
+                self.user_params_optimizer = torch.optim.Adam(
+                    [learning_users_emb],
+                    lr=self.config['inner_user_lr']
+                )
             case 'none':
                 pass
             case _:
@@ -1005,9 +1045,8 @@ class AbstractSelectionStrategy(ABC):
                     
                 L1, L3, R = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
                 losses = torch.stack([L1, L3])  # Shape: (4,)
-                # Use learnable meta_lambda if available, otherwise use config lambda
-                #lambda_value = self.meta_lambda.detach().clone() if hasattr(self, 'meta_lambda') else self.config['lambda']
-                meta_loss = torch.dot(self.weights, losses) #+ lambda_value * R
+                
+                meta_loss = torch.dot(self.weights, losses) 
                 mean_meta_loss += meta_loss / len(batch)
                     
             if self.config['meta_trainer'] != 'Adam':
@@ -1030,8 +1069,6 @@ class AbstractSelectionStrategy(ABC):
                         warnings.simplefilter("always")
 
                     self.S_scheduler.step(valid_loss)
-
-                    # Use the single scheduler for all meta trainer types if it exists
                     if hasattr(self, 'meta_scheduler') and self.meta_scheduler is not None:
                         self.meta_scheduler.step(valid_loss)
 
