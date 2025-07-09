@@ -273,14 +273,13 @@ class AbstractSelectionStrategy(ABC):
             self.meta_optimizer.zero_grad()
             self.meta_scaler.scale(loss).backward()
 
-            # Print gradients for debugging
-            if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
-                print(f"meta_params gradient norm: {self.meta_params.grad.norm()}")
-            if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
-                print(f"meta_mean gradient norm: {self.meta_mean.grad.norm()}")
-            if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
-                print(f"meta_lambda gradient norm: {self.meta_lambda.grad.norm()}")
-            
+            if not self.config['debug'] : 
+                if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
+                    logging.info(f"meta_params gradient norm: {self.meta_params.grad.norm()}")
+                if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
+                    logging.info(f"meta_mean gradient norm: {self.meta_mean.grad.norm()}")
+                if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
+                    logging.info(f"meta_lambda gradient norm: {self.meta_lambda.grad.norm()}")
             
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
@@ -420,10 +419,10 @@ class AbstractSelectionStrategy(ABC):
         prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)
         
         # Update user embeddings
-        updated_users_emb = (learning_users_emb - 
-                            prec_L1 * self.weights[0] * grads_L1[0] - 
-                            prec_L3 * self.weights[1] * grads_L3[0] - 
-                            self.config['lambda'] * grads_R_tensor) 
+        updated_users_emb = (learning_users_emb 
+                             - prec_L1 * self.weights[0] * grads_L1[0] 
+                             - prec_L3 * self.weights[1] * grads_L3[0] 
+                             - self.config['lambda'] * grads_R_tensor) 
 
         return updated_users_emb, prec_L1 * (self.weights[0]*L1 + self.weights[1]* L3) 
     
@@ -510,7 +509,7 @@ class AbstractSelectionStrategy(ABC):
             if self.config['debug']:
                 u_emb_copy = users_emb.clone().requires_grad_(True)
 
-            for t in range(self.config['num_inner_users_epochs']) :
+            for k in range(self.config['num_inner_users_epochs']) :
     
                 if self.config['debug']:
                     sum_loss_0 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
@@ -541,7 +540,7 @@ class AbstractSelectionStrategy(ABC):
 
                 if self.config['debug']:
                     logging.debug(
-                        f'- inner step : {t} '
+                        f'- inner step : {k} '
                         f'- emb dist : {torch.norm(users_emb - u_emb_copy)} '
                         f'- query loss 0 : {sum_loss_0/n_batches:.5f} '
                         f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
