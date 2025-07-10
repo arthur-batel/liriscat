@@ -275,7 +275,7 @@ class AbstractSelectionStrategy(ABC):
 
             if not self.config['debug'] : 
                 if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
-                    logging.info(f"meta_params gradient norm: {self.meta_params.grad.norm()}")
+                    logging.info(f"meta_params gradient norm: {[self.meta_params[i,:].grad.norm() for i in range(self.meta_params.shape[0])]}")
                 if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
                     logging.info(f"meta_mean gradient norm: {self.meta_mean.grad.norm()}")
                 if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
