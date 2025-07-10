@@ -102,8 +102,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(7, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
 
                 self.meta_params.data[2,0] = torch.log(torch.exp(torch.tensor(self.config['lambda']*3))-1)
                 self.meta_params.data[2,1] = 15
@@ -119,7 +119,7 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(1, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
             case 'Approx_GAP_cw':
@@ -127,15 +127,15 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(1, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
 
             case 'Approx_GAP_mult':
                 self.inner_step = self.Approx_GAP_mult_inner_step
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
             
             case 'Approx_GAP_mult_lambda_prior':
@@ -143,8 +143,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
             case 'Approx_GAP_mult_cw':
@@ -152,16 +152,16 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
 
             case 'Approx_GAP_mult_mean_prior':
                 self.inner_step = self.Approx_GAP_mult_mean_prior_inner_step
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
             case 'Approx_GAP_mult_mean_lambda_prior':
@@ -169,8 +169,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
         
 
@@ -179,8 +179,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
                 
 
@@ -189,8 +189,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params = torch.nn.Parameter(torch.empty(2, metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + torch.log(torch.exp(torch.tensor(self.config['inner_user_lr']*500))-1)
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
