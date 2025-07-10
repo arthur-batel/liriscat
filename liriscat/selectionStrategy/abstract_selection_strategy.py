@@ -114,6 +114,8 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params.data[5,:] = self.meta_params.data[5,:]+15
                 self.meta_params.data[6,:] = self.meta_params.data[6,:]+15
 
+                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
+
             case 'Approx_GAP':
                 self.inner_step = self.Approx_GAP_inner_step
                 self.meta_params = torch.nn.Parameter(torch.empty(1, metadata['num_dimension_id']))
@@ -136,7 +138,7 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_params.data = self.meta_params.data.to(self.config['device'])
                 self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
                 self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
-                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
+                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])            
             
             case 'Approx_GAP_mult_lambda_prior':
                 self.inner_step = self.Approx_GAP_mult_lambda_prior_inner_step
@@ -321,25 +323,17 @@ class AbstractSelectionStrategy(ABC):
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
         L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
 
-        losses = torch.stack([L1, L3])  # Shape: (4,)
-
-        # Update statistics and compute weights
-        self.weights = self.L_W.compute_weights(losses)
-        weights = self.weights
-        
         # 3. Compute gradients w.r.t. the copied embeddings
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
-        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+self.meta_params[3,:]*torch.nn.Sigmoid()(grads_L3[0]+self.meta_params[5,:])
-        prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)+self.meta_params[4,:]*torch.nn.Sigmoid()(grads_L1[0]+self.meta_params[6,:])
-        prec_R = torch.nn.Softplus()(self.meta_params[2,0]).repeat(self.metadata["num_user_id"], 1)
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)#+self.meta_params[3,:]*torch.nn.Sigmoid()(grads_L3[0]+self.meta_params[5,:])
+        prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)#+self.meta_params[4,:]*torch.nn.Sigmoid()(grads_L1[0]+self.meta_params[6,:])
 
-        updated_users_emb = learning_users_emb - weights[0]*prec_L1 * grads_L1[0] - weights[1]*prec_L3 * grads_L3[0] - prec_R * grads_R[0] 
+        updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - self.config['lambda'] * grads_R[0] 
 
-
-        return updated_users_emb,  weights[0]*prec_L1 * L1 + weights[1] * prec_L3 * grads_L3[0] + prec_R * R
+        return updated_users_emb,  prec_L1 * L1 + prec_L3 * grads_L3[0] + self.config['lambda'] * R
 
     def Approx_GAP_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
@@ -808,7 +802,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
-                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.5) #todo : wrap in a correct module
+                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.01) #todo : wrap in a correct module
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
 
