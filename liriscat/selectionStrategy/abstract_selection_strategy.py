@@ -99,22 +99,7 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
             case 'GAP':
                 self.inner_step = self.GAP_inner_step
-                self.meta_params = torch.nn.Parameter(torch.empty(7, metadata['num_dimension_id']))
-                torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
-                self.meta_params.data = self.meta_params.data.to(self.config['device'])
-                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
-                self.meta_params.data[1,:] = self.meta_params.data[1,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
 
-                self.meta_params.data[2,0] = torch.log(torch.exp(torch.tensor(self.config['lambda']*3))-1)
-                self.meta_params.data[2,1] = 15
-                self.meta_params.data[2,2] = 15
-
-                self.meta_params.data[3,:] = self.meta_params.data[3,:]+40
-                self.meta_params.data[4,:] = self.meta_params.data[4,:]+40
-                self.meta_params.data[5,:] = self.meta_params.data[5,:]+15
-                self.meta_params.data[6,:] = self.meta_params.data[6,:]+15
-
-                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
             case 'Approx_GAP':
                 self.inner_step = self.Approx_GAP_inner_step
@@ -277,12 +262,26 @@ class AbstractSelectionStrategy(ABC):
 
             if not self.config['debug'] : 
                 if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
-                    logging.info(f"meta_params gradient norm: {[self.meta_params[i,:].grad.norm() for i in range(self.meta_params.shape[0])]}")
+                    logging.info(f"- meta_params gn: {[self.meta_params.grad[i,:].norm().item() for i in range(self.meta_params.shape[0])]}")
+                if hasattr(self, 'cross_cond') and self.cross_cond is not None and self.cross_cond.grad is not None:
+                    logging.info(f"- cross_cond gn: {[self.cross_cond.grad[i,:].norm().item() for i in range(self.cross_cond.shape[0])]}")
                 if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
-                    logging.info(f"meta_mean gradient norm: {self.meta_mean.grad.norm()}")
+                    logging.info(f"- meta_mean gn: {self.meta_mean.grad.norm().item()}")
                 if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
-                    logging.info(f"meta_lambda gradient norm: {self.meta_lambda.grad.norm()}")
-            
+                    logging.info(f"- meta_lambda gn: {self.meta_lambda.grad.norm().item()}")
+
+            if not self.config['debug'] : 
+                if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
+                    logging.info(f"- meta_params: {[self.meta_params[i,:].norm().item() for i in range(self.meta_params.shape[0])]}")
+                if hasattr(self, 'cross_cond') and self.cross_cond is not None and self.cross_cond.grad is not None:
+                    logging.info(f"- cross_cond: {[self.cross_cond[i,:].norm().item() for i in range(self.cross_cond.shape[0])]}")
+                if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
+                    logging.info(f"- meta_mean: {self.meta_mean.norm().item()}")
+                if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
+                    logging.info(f"- meta_lambda: {self.meta_lambda.grad.norm().item()}")
+            # Print current learning rates
+            for param_group in self.meta_optimizer.param_groups:
+                logging.info(f"- Current meta lr: {param_group['lr']}")
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
                 torch.nn.utils.clip_grad_norm_(self.meta_params, max_norm=10.0)
@@ -323,14 +322,18 @@ class AbstractSelectionStrategy(ABC):
         #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
         L1, L3, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
 
+        losses = torch.stack([L1, L3])
+        self.weights = self.L_W.compute_weights(losses)
+
         # 3. Compute gradients w.r.t. the copied embeddings
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
-        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)#+self.meta_params[3,:]*torch.nn.Sigmoid()(grads_L3[0]+self.meta_params[5,:])
-        prec_L3 = torch.nn.Softplus()(self.meta_params[1,:]).repeat(self.metadata["num_user_id"], 1)#+self.meta_params[4,:]*torch.nn.Sigmoid()(grads_L1[0]+self.meta_params[6,:])
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.meta_params[1,0])*torch.nn.Sigmoid()(grads_L3[0])#+self.meta_params[5,:])
+        prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
 
+        #logging.info(f"L1: {L1.item()}, L3: {L3.item()}, grad L1: {grads_L1[0].norm().item()}, grad L3: {grads_L3[0].norm().item()}")
         updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - self.config['lambda'] * grads_R[0] 
 
         return updated_users_emb,  prec_L1 * L1 + prec_L3 * grads_L3[0] + self.config['lambda'] * R
@@ -621,7 +624,7 @@ class AbstractSelectionStrategy(ABC):
                 learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(),meta_data, learning_users_emb)
 
             L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'].int(),learning_users_emb=learning_users_emb)
-
+            logging.info(f"Valid L1: {L1.item()}, L3: {L3.item()}")
             losses = torch.stack([L1, L3])  # Shape: (4,)
             
             total_loss = torch.dot(self.weights, losses)
@@ -802,7 +805,34 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
-                self.meta_optimizer = torch.optim.Adam([self.meta_params], lr=0.01) #todo : wrap in a correct module
+
+                self.meta_params = torch.nn.Parameter(torch.empty(7, self.metadata['num_dimension_id']))
+                torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
+                self.meta_params.data = self.meta_params.data.to(self.config['device'])
+                self.meta_params.data[0,:] = self.meta_params.data[0,:] + inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.meta_params.data[1,:] = self.meta_params.data[1,:] + 40
+
+                self.meta_params.data[2,0] = torch.log(torch.exp(torch.tensor(self.config['lambda']*3))-1)
+                self.meta_params.data[2,1] = 15
+                self.meta_params.data[2,2] = 15
+
+                self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
+        
+                self.cross_cond = torch.nn.Parameter(torch.empty(4, self.metadata['num_dimension_id']),
+                    requires_grad=True)
+                torch.nn.init.normal_(self.cross_cond, mean=0.0, std=0.5)
+                self.cross_cond.data = self.cross_cond.data.to(self.config['device'])
+                self.cross_cond.data[0,:] = self.cross_cond.data[0,:]+inverse_softplus(torch.tensor(self.config['inner_user_lr']*500))
+                self.cross_cond.data[1,:] = self.cross_cond.data[1,:]+40
+                self.cross_cond.data[2,:] = self.cross_cond.data[2,:]+15
+                self.cross_cond.data[3,:] = self.cross_cond.data[3,:]+15
+
+                self.meta_optimizer = torch.optim.Adam(
+                    [
+                        {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.07)},
+                        {'params': self.cross_cond,  'lr': self.config.get('cross_cond_lr', 0.7)},
+                    ]
+                )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
 
@@ -1016,7 +1046,7 @@ class AbstractSelectionStrategy(ABC):
 
             for u_batch, batch in enumerate(train_loader): # UserCollate directly load the data into the query environment
                 
-                logging.debug(f'----- User batch : {u_batch}')
+                logging.info(f'----- User batch : {u_batch}')
 
                 train_query_env.load_batch(batch)
 
@@ -1035,7 +1065,7 @@ class AbstractSelectionStrategy(ABC):
                     i_query_data = train_query_env.feed_IMPACT_sub()
                 
                     learning_users_emb = self.inner_loop(i_query_data,meta_data,learning_users_emb)
-                    
+
                 L1, L3, R = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
                 losses = torch.stack([L1, L3])  # Shape: (4,)
                 
