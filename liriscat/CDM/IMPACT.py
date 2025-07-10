@@ -214,9 +214,8 @@ def custom_l1(learning_users_emb: torch.Tensor,
     
     sign_b = b[u_base_idx, u_comp_idx].sign()
     diff_emb = u_base_emb - u_comp_emb
-    q_val = 1.0 - sign_b * diff_emb
 
-    L3 = torch.clamp(q_val, min=0.0).mean()
+    L3 = F.softplus(- sign_b * diff_emb).mean()
 
     return L1, L3  # L3 is not used in this implementation, returning 0
 
