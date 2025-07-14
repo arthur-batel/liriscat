@@ -278,7 +278,7 @@ class AbstractSelectionStrategy(ABC):
                 if hasattr(self, 'meta_mean') and self.meta_mean is not None and self.meta_mean.grad is not None:
                     logging.info(f"- meta_mean: {self.meta_mean.norm().item()}")
                 if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
-                    logging.info(f"- meta_lambda: {self.meta_lambda.grad.norm().item()}")
+                    logging.info(f"- meta_lambda: {self.meta_lambda.norm().item()}")
             # Print current learning rates
             for param_group in self.meta_optimizer.param_groups:
                 logging.info(f"- Current meta lr: {param_group['lr']}")
@@ -334,9 +334,9 @@ class AbstractSelectionStrategy(ABC):
         prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0].norm())#*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
 
         #logging.info(f"L1: {L1.item()}, L3: {L3.item()}, grad L1: {grads_L1[0].norm().item()}, grad L3: {grads_L3[0].norm().item()}")
-        updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - self.config['lambda'] * grads_R[0] 
+        updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - torch.nn.Softplus()(self.meta_lambda) * grads_R[0] 
 
-        return updated_users_emb,  prec_L1 * L1 + prec_L3 * grads_L3[0] + self.config['lambda'] * R
+        return updated_users_emb,  prec_L1 * L1 + prec_L3 * grads_L3[0] + torch.nn.Softplus()(self.meta_lambda) * R
 
     def Approx_GAP_inner_step(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
@@ -827,10 +827,16 @@ class AbstractSelectionStrategy(ABC):
                 self.cross_cond.data[2,:] = self.cross_cond.data[2,:]+15
                 self.cross_cond.data[3,:] = self.cross_cond.data[3,:]+15
 
+                self.meta_lambda = torch.nn.Parameter(
+                    inverse_softplus(torch.tensor(self.config['lambda'], device=self.device, dtype=torch.float32).clone()),
+                    requires_grad=True
+                )
+
                 self.meta_optimizer = torch.optim.Adam(
                     [
                         {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.07)},
                         {'params': self.cross_cond,  'lr': self.config.get('cross_cond_lr', 0.7)},
+                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.5)},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
@@ -1029,8 +1035,6 @@ class AbstractSelectionStrategy(ABC):
         valid_loader = DataLoader(dataset=valid_dataset, collate_fn=UserCollate(valid_query_env),
                                   batch_size=self.config['valid_batch_size'],
                                   shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
-        
-        self.train_meta_doa = lambda u,q : utils.train_meta_doa(self.CDM.model.users_emb.weight.detach(), learning_users_emb.detach(), train_dataset.log_tensor+ valid_dataset.log_tensor, train_dataset.log_tensor + valid_dataset.log_tensor, u, q, train_dataset.metadata, train_dataset.concept_map)
         
         orig_emb = learning_users_emb.detach().clone()
 
