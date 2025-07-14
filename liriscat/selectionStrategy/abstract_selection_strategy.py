@@ -330,8 +330,8 @@ class AbstractSelectionStrategy(ABC):
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
-        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.meta_params[1,0])*torch.nn.Sigmoid()(grads_L3[0])#+self.meta_params[5,:])
-        prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.meta_params[1,0])*torch.nn.Sigmoid()(grads_L3[0].norm())#*torch.nn.Sigmoid()(grads_L3[0])#+self.meta_params[5,:])
+        prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0].norm())#*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
 
         #logging.info(f"L1: {L1.item()}, L3: {L3.item()}, grad L1: {grads_L1[0].norm().item()}, grad L3: {grads_L3[0].norm().item()}")
         updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - self.config['lambda'] * grads_R[0] 
