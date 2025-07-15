@@ -1113,6 +1113,8 @@ class AbstractSelectionStrategy(ABC):
                             self.best_model_params['meta_mean'] = self.meta_mean.detach().clone()
                         if hasattr(self, 'meta_lambda') :
                             self.best_model_params['meta_lambda'] = self.meta_lambda.detach().clone()
+                        if hasattr(self, 'cross_cond') :
+                            self.best_model_params['cross_cond'] = self.cross_cond.detach().clone()
 
                     if ep - self.best_epoch >= patience:
                         break
@@ -1124,6 +1126,8 @@ class AbstractSelectionStrategy(ABC):
             self.meta_mean = self.best_model_params['meta_mean'].requires_grad_()
         if hasattr(self, 'meta_lambda') :
             self.meta_lambda = self.best_model_params['meta_lambda'].requires_grad_()
+        if hasattr(self, 'cross_cond') :
+            self.cross_cond = self.best_model_params['cross_cond'].requires_grad_()
 
 
     def reset_rng(self):
