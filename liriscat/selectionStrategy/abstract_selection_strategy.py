@@ -285,6 +285,8 @@ class AbstractSelectionStrategy(ABC):
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
                 torch.nn.utils.clip_grad_norm_(self.meta_params, max_norm=10.0)
+            if hasattr(self, 'cross_cond') and self.cross_cond is not None:
+                torch.nn.utils.clip_grad_norm_(self.cross_cond, max_norm=10.0)
             if hasattr(self, 'meta_mean') and self.meta_mean is not None:
                 torch.nn.utils.clip_grad_norm_(self.meta_mean, max_norm=10.0)
             if hasattr(self, 'meta_lambda') and self.meta_lambda is not None:
