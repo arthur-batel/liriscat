@@ -651,11 +651,15 @@ class AbstractSelectionStrategy(ABC):
         torch.cuda.empty_cache()
         logging.info('train on {}'.format(self.config['device']))
 
-        learning_users_emb = nn.Parameter(self.CDM.model.users_emb.weight.detach().clone().requires_grad_(True))
+        learning_users_emb = nn.Parameter(torch.rand_like(self.CDM.model.users_emb.weight.detach().clone()).requires_grad_(True))
 
         # Initialize testing config
         match self.config['meta_trainer']:
             case 'GAP':
+                mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean, covariance_matrix=self.CDM.model.cov_matrix)
+                learning_users_emb = nn.Parameter(mvn.sample((test_dataset.n_users,)).squeeze(-2).requires_grad_(True))
+                print(learning_users_emb.shape)
+            case 'BETA-CD':
                 pass
             case 'Approx_GAP':
                 pass
