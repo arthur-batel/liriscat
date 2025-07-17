@@ -269,6 +269,8 @@ class AbstractSelectionStrategy(ABC):
                     logging.info(f"- meta_mean gn: {self.meta_mean.grad.norm().item()}")
                 if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
                     logging.info(f"- meta_lambda gn: {self.meta_lambda.grad.norm().item()}")
+                if hasattr(self, 'learning_users_emb') and self.learning_users_emb is not None and self.learning_users_emb.grad is not None:
+                    logging.info(f"- learning_users_emb gn: {self.learning_users_emb.grad.norm().item()}")
 
             if not self.config['debug'] : 
                 if hasattr(self, 'meta_params') and self.meta_params is not None and self.meta_params.grad is not None:
@@ -279,12 +281,16 @@ class AbstractSelectionStrategy(ABC):
                     logging.info(f"- meta_mean: {self.meta_mean.norm().item()}")
                 if hasattr(self, 'meta_lambda') and self.meta_lambda is not None and self.meta_lambda.grad is not None:
                     logging.info(f"- meta_lambda: {self.meta_lambda.norm().item()}")
+                if hasattr(self, 'learning_users_emb') and self.learning_users_emb is not None and self.learning_users_emb.grad is not None:
+                    logging.info(f"- learning_users_emb: {self.learning_users_emb.norm().item()}")
             # Print current learning rates
             for param_group in self.meta_optimizer.param_groups:
                 logging.info(f"- Current meta lr: {param_group['lr']}")
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
                 torch.nn.utils.clip_grad_norm_(self.meta_params, max_norm=10.0)
+            """ if hasattr(self, 'learning_users_emb') and self.learning_users_emb is not None:
+                torch.nn.utils.clip_grad_norm_(self.learning_users_emb, max_norm=10.0) """
             if hasattr(self, 'cross_cond') and self.cross_cond is not None:
                 torch.nn.utils.clip_grad_norm_(self.cross_cond, max_norm=10.0)
             if hasattr(self, 'meta_mean') and self.meta_mean is not None:
@@ -619,9 +625,9 @@ class AbstractSelectionStrategy(ABC):
         # Initialize testing config
         match self.config['meta_trainer']:
             case 'GAP':
-                mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean, covariance_matrix=self.CDM.model.cov_matrix)
-                learning_users_emb = nn.Parameter(mvn.sample((test_dataset.n_users,)).squeeze(-2).requires_grad_(True))
-                print(learning_users_emb.shape)
+                #mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean, covariance_matrix=self.CDM.model.cov_matrix)
+                #learning_users_emb = nn.Parameter(mvn.sample((test_dataset.n_users,)).squeeze(-2).requires_grad_(True))
+                learning_users_emb = nn.Parameter(torch.tile(self.learning_users_emb, (test_dataset.n_users, 1)).to(self.config['device']).requires_grad_(True))
             case 'BETA-CD':
                 pass
             case 'Approx_GAP':
@@ -754,7 +760,7 @@ class AbstractSelectionStrategy(ABC):
         # Put models in training mode
         self.model.train()
         self.CDM.model.train()
-        learning_users_emb = self.CDM.reset_train_valid_users(train_dataset, valid_dataset)
+        learning_users_emb = nn.Parameter(torch.rand_like(self.CDM.model.users_emb.weight.detach().clone()).requires_grad_(True))
 
         # Initialize training optimizers and schedulers
         lr = self.config['learning_rate']
@@ -774,6 +780,8 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
+
+                self.learning_users_emb = nn.Parameter(self.CDM.model.prior_mean, requires_grad=True).to(device=self.config['device'])
 
                 self.meta_params = torch.nn.Parameter(torch.empty(7, self.metadata['num_dimension_id']))
                 torch.nn.init.normal_(self.meta_params, mean=0.0, std=0.5)
@@ -806,6 +814,26 @@ class AbstractSelectionStrategy(ABC):
                         {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.07)},
                         {'params': self.cross_cond,  'lr': self.config.get('cross_cond_lr', 0.7)},
                         {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.5)},
+                        {'params': self.learning_users_emb,  'lr': self.config.get('learning_users_emb_lr', 0.001)},
+                    ]
+                )
+                self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
+                self.meta_scaler = torch.amp.GradScaler(self.config['device'])
+
+            case 'BETA-CD':
+                
+                self.hyper_model = NormalVariationalNet(self.CDM)
+                self.adapted_hyper_model = clone_state_dict(self.hyper_model)
+                self.kl_weight = 10e-4
+                self.inner_lrs = nn.Parameter(
+                    torch.Tensor([self.cfg["inner_lr"]] * self.inner_num_updates).to(
+                        self.device
+                    ),
+                    requires_grad=True,
+                )
+                self.meta_optimizer = torch.optim.Adam(
+                    [
+                        {'params': self.inner_lrs,  'lr': self.config.get('inner_lrs_lr', 0.1*self.config['num_inner_users_epochs'])},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
@@ -1013,7 +1041,8 @@ class AbstractSelectionStrategy(ABC):
 
             train_dataset.set_query_seed(ep) # changes the meta and query set for each epoch
             
-            learning_users_emb = orig_emb.clone().requires_grad_(True)
+            if hasattr(self, 'learning_users_emb'):
+                learning_users_emb = torch.tile(self.learning_users_emb, (train_dataset.n_users, 1)).to(self.config['device']) #orig_emb.clone().requires_grad_(True)
 
             mean_meta_loss = 0.0
 
@@ -1049,10 +1078,10 @@ class AbstractSelectionStrategy(ABC):
                 self.update_meta_params(mean_meta_loss)
             #self.update_S_params(meta_loss)
             #self.update_CDM_params(meta_loss)
-
-            with torch.no_grad():
-                learning_users_emb.copy_(orig_emb)
-            learning_users_emb.requires_grad_(True)
+            if not hasattr(self, 'learning_users_emb'):
+                with torch.no_grad():
+                    learning_users_emb.copy_(orig_emb)
+                learning_users_emb.requires_grad_(True)
 
             # Early stopping
             if (ep + 1) % eval_freq == 0:
@@ -1084,6 +1113,8 @@ class AbstractSelectionStrategy(ABC):
                             self.best_model_params['meta_lambda'] = self.meta_lambda.detach().clone()
                         if hasattr(self, 'cross_cond') :
                             self.best_model_params['cross_cond'] = self.cross_cond.detach().clone()
+                        if hasattr(self, 'learning_users_emb') :
+                            self.best_model_params['learning_users_emb'] = self.learning_users_emb.detach().clone()
 
                     if ep - self.best_epoch >= patience:
                         break
@@ -1097,6 +1128,8 @@ class AbstractSelectionStrategy(ABC):
             self.meta_lambda = self.best_model_params['meta_lambda'].requires_grad_()
         if hasattr(self, 'cross_cond') :
             self.cross_cond = self.best_model_params['cross_cond'].requires_grad_()
+        if hasattr(self, 'learning_users_emb') :
+            self.learning_users_emb = self.best_model_params['learning_users_emb'].requires_grad_()
 
 
     def reset_rng(self):
