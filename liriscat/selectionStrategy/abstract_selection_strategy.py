@@ -503,52 +503,15 @@ class AbstractSelectionStrategy(ABC):
 
             sub_data = dataset.SubmittedDataset(query_data)
             sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
-            n_batches = len(sub_dataloader)
-
-            if self.config['debug']:
-                u_emb_copy = users_emb.clone().requires_grad_(True)
 
             for k in range(self.config['num_inner_users_epochs']) :
-    
-                if self.config['debug']:
-                    sum_loss_0 = sum_acc_0 = sum_acc_1 = sum_meta_acc = sum_meta_loss = 0
                    
-    
                 for  batch in sub_dataloader:
-                    users_id, items_id, labels, concepts_id, nb_modalities = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
+                    users_id, items_id, labels, concepts_id, _ = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
     
-                    if self.config['debug']:
-                        self.CDM.model.eval()
-                        with torch.no_grad() , torch.amp.autocast('cuda'):                    
-                            preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
-                            sum_acc_0 += utils.micro_ave_accuracy(labels, preds,nb_modalities)
-                            meta_preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'],users_emb=users_emb)                            
-
                     self.CDM.model.train()
-                    users_emb, loss = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
+                    users_emb, _ = self.inner_step(users_id, items_id, labels, concepts_id, users_emb,k)
                     self.CDM.model.eval()
-
-                    if self.config['debug']:
-                        with torch.no_grad(), torch.amp.autocast('cuda'):
-                            sum_loss_0 += loss.item()
-                            preds = self.CDM.forward(users_id, items_id, concepts_id,users_emb=users_emb)
-                            sum_acc_1 += utils.micro_ave_accuracy(labels,preds, nb_modalities)
-                            sum_meta_acc += utils.micro_ave_accuracy(meta_data['labels'], meta_preds,meta_data['nb_modalities'])
-                            L1,L3,R = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
-                            sum_meta_loss += (L1.item() + L3.item() + R.item())
-
-                if self.config['debug']:
-                    logging.debug(
-                        f'- inner step : {k} '
-                        f'- emb dist : {torch.norm(users_emb - u_emb_copy)} '
-                        f'- query loss 0 : {sum_loss_0/n_batches:.5f} '
-                        f'- query acc 0 : {sum_acc_0/n_batches:.5f} '
-                        f'- query acc 1 : {sum_acc_1/n_batches:.10f} '
-                        f'- meta acc 0 : {sum_meta_acc/n_batches:.5f}'
-                        f'- meta loss 1 : {sum_meta_loss:.5f}'
-                    )
-                    for handler in logging.getLogger().handlers:
-                        handler.flush()
 
             return users_emb
 
