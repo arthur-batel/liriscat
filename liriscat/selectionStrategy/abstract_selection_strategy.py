@@ -510,7 +510,7 @@ class AbstractSelectionStrategy(ABC):
                     users_id, items_id, labels, concepts_id, _ = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
     
                     self.CDM.model.train()
-                    users_emb, _ = self.inner_step(users_id, items_id, labels, concepts_id, users_emb,k)
+                    users_emb, _ = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
                     self.CDM.model.eval()
 
             return users_emb
