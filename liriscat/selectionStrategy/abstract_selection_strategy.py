@@ -285,12 +285,10 @@ class AbstractSelectionStrategy(ABC):
                     logging.info(f"- learning_users_emb: {self.learning_users_emb.norm().item()}")
             # Print current learning rates
             for param_group in self.meta_optimizer.param_groups:
-                logging.info(f"- Current meta lr: {param_group['lr']}")
+                logging.info(f"- {param_group['name']}: {param_group['lr']}")
             # Add gradient clipping for numerical stability
             if hasattr(self, 'meta_params') and self.meta_params is not None:
                 torch.nn.utils.clip_grad_norm_(self.meta_params, max_norm=10.0)
-            """ if hasattr(self, 'learning_users_emb') and self.learning_users_emb is not None:
-                torch.nn.utils.clip_grad_norm_(self.learning_users_emb, max_norm=10.0) """
             if hasattr(self, 'cross_cond') and self.cross_cond is not None:
                 torch.nn.utils.clip_grad_norm_(self.cross_cond, max_norm=10.0)
             if hasattr(self, 'meta_mean') and self.meta_mean is not None:
@@ -339,10 +337,10 @@ class AbstractSelectionStrategy(ABC):
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
         prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.meta_params[1,0])*torch.nn.Sigmoid()(grads_L3[0].norm())#*torch.nn.Sigmoid()(grads_L3[0])#+self.meta_params[5,:])
-        prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0].norm())#*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
+        prec_L3 = torch.nn.Softplus()(self.cross_cond[0,:]).repeat(self.metadata["num_user_id"], 1)+torch.nn.Softplus()(self.cross_cond[1,0])*torch.nn.Sigmoid()(grads_L1[0].norm()+grads_R[0].norm())#*torch.nn.Sigmoid()(grads_L1[0])#+self.meta_params[6,:])
 
         #logging.info(f"L1: {L1.item()}, L3: {L3.item()}, grad L1: {grads_L1[0].norm().item()}, grad L3: {grads_L3[0].norm().item()}")
-        updated_users_emb = learning_users_emb - prec_L1 * grads_L1[0] - prec_L3 * grads_L3[0] - torch.nn.Softplus()(self.meta_lambda) * grads_R[0] 
+        updated_users_emb = learning_users_emb - prec_L1 * (grads_L1[0]+torch.nn.Softplus()(self.meta_lambda)*grads_R[0]) - prec_L3 * grads_L3[0] #- torch.nn.Softplus()(self.meta_lambda) * grads_R[0]
 
         return updated_users_emb,  prec_L1 * L1 + prec_L3 * grads_L3[0] + torch.nn.Softplus()(self.meta_lambda) * R
 
@@ -811,10 +809,10 @@ class AbstractSelectionStrategy(ABC):
 
                 self.meta_optimizer = torch.optim.Adam(
                     [
-                        {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.07)},
-                        {'params': self.cross_cond,  'lr': self.config.get('cross_cond_lr', 0.7)},
-                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.5)},
-                        {'params': self.learning_users_emb,  'lr': self.config.get('learning_users_emb_lr', 0.001)},
+                        {'params': self.meta_params,  'lr': self.config.get('meta_params_lr', 0.07), "name": "meta_params"},
+                        {'params': self.cross_cond,  'lr': self.config.get('cross_cond_lr', 0.7), "name": "cross_cond"},
+                        {'params': self.meta_lambda,  'lr': self.config.get('meta_lambda_lr', 0.5), "name": "meta_lambda"},
+                        {'params': self.learning_users_emb,  'lr': self.config.get('learning_users_emb_lr', 0.001), "name": "learning_users_emb"},
                     ]
                 )
                 self.meta_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.meta_optimizer, patience=2, factor=0.5)
