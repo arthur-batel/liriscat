@@ -39,7 +39,6 @@ class CATIMPACT(IMPACT) :
         super().init_model(train_data,valid_data)
 
         # Replacement of pretrained users embeddings with randomly generated ones
-        self.init_users_prior(train_data, valid_data)
         self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
         self.model.R_train = train_data.log_tensor + valid_data.log_tensor
     
@@ -51,24 +50,6 @@ class CATIMPACT(IMPACT) :
         self.model.R = test_data.log_tensor
         self.model.ir_idx = resp_to_mod(self.model.R, self.model.nb_modalities)
         self.model.ir_idx = self.model.ir_idx.to(self.config['device'], non_blocking=True)    
-
-    def reset_train_valid_users(self, train_data, valid_data):
-        """
-        Initialize users embedding based on the posterior distribution learned on train and valid users.
-        """
-        train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)),device=self.config['device'])
-        train_valid_users = train_valid_users.to(dtype=torch.long)
-        
-        # NO data leak to test dataset because we only look at the train and valid users 
-        user_embeddings = self.model.users_emb(train_valid_users).float().detach()
-        
-        ave = user_embeddings.mean(dim=0)
-        std = user_embeddings.std(dim=0)
-
-        E = torch.normal(ave.expand(train_data.n_users, -1), std.expand(train_data.n_users, -1)/2)
-        E = E - E.mean(dim=0) + ave
-
-        return nn.Parameter(E.requires_grad_(True).to(self.config['device']))
 
     def init_users_prior(self, train_data, valid_data):
         """
@@ -82,9 +63,9 @@ class CATIMPACT(IMPACT) :
         
         ave = user_embeddings.mean(dim=0)
 
-        cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
+        self.model.cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
 
-        self.model.prior_cov_inv = torch.inverse(cov_matrix)
+        self.model.prior_cov_inv = torch.inverse(self.model.cov_matrix)
         self.model.prior_mean = ave.unsqueeze(0)
         
         self.get_regularizer = functools.partial(self.get_regularizer_with_prior)
