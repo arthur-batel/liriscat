@@ -41,7 +41,6 @@ class CATIMPACT(IMPACT) :
         # Replacement of pretrained users embeddings with randomly generated ones
         self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
         self.model.R_train = train_data.log_tensor + valid_data.log_tensor
-    
 
     def get_params(self):
         return self.model.state_dict()
@@ -67,8 +66,6 @@ class CATIMPACT(IMPACT) :
 
         self.model.prior_cov_inv = torch.inverse(self.model.cov_matrix)
         self.model.prior_mean = ave.unsqueeze(0)
-        
-        self.get_regularizer = functools.partial(self.get_regularizer_with_prior)
         
         self.initialized_users_prior = True
 
