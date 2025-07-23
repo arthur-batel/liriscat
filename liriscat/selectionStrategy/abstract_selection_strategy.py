@@ -777,7 +777,7 @@ class AbstractSelectionStrategy(ABC):
                     torch.randn(self.metadata['num_dimension_id']).to(self.device)-4
                     ,requires_grad=True
                 )
-                self.kl_weight = torch.nn.Parameter(torch.Tensor([1e-3]).to(self.device), requires_grad=True)
+                self.kl_weight = torch.nn.Parameter(torch.Tensor([self.config.get('kl_weight', 1e-3)]).to(self.device), requires_grad=True)
                 self.inner_lrs = torch.nn.Parameter(torch.Tensor([0.05]* self.config['num_inner_users_epochs']).to(self.device), requires_grad=True)
                 
                 # Optimizers declaration
