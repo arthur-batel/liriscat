@@ -1,2 +1,4 @@
 CAT;dataset; valid_metric; best_valid_metric; best hyperparams
-Naive CAT + Adam;math2;3.531519108242844;{'inner_user_lr': 5.723345073386536e-05, 'num_inner_users_epochs': 5}
+Naive CAT + Adam;algebra; 0.16738478334465626; {'inner_user_lr': 0.013612810801828261, 'num_inner_users_epochs': 7}
+Naive CAT + Adam;math2;0.038769393499290594;{'inner_user_lr': 0.045672368125232767, 'num_inner_users_epochs': 10}
+
