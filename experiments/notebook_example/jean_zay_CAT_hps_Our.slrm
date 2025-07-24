@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=CAT_parallel_assist0910_IMPACT_Our
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
+##SBATCH --constraint=v100-16g
+#SBATCH --nodes=1
+#SBATCH --ntasks=4             # Number of parallel tasks = number of GPUs requested
+#SBATCH --gpus-per-task=1           # One GPU per task
+#SBATCH --cpus-per-task=8      # CPUs per task (adjust based on CPU requirements per GPU)
+#SBATCH --time=04:00:00
+#SBATCH --hint=nomultithread
+#SBATCH --account=enh@v100
+##SBATCH --qos=qos_gpu-dev
+
+module purge
+module load pytorch-gpu/py3/2.7.0
+
+# Run multiple parallel processes, each one independently
+srun python CAT_hps_parallelized_version_Our-SLURM.py 
