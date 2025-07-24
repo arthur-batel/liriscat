@@ -880,7 +880,7 @@ class AbstractSelectionStrategy(ABC):
 
             for u_batch, batch in enumerate(train_loader): # UserCollate directly load the data into the query environment
                 
-                logging.info(f'----- User batch : {u_batch}')
+                logging.debug(f'----- User batch : {u_batch}')
 
                 train_query_env.load_batch(batch)
 
