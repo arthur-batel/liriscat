@@ -28,7 +28,12 @@ def pareto_index(d) :
     r = []
 
     for i in range(len(d_acc)):
-        r.append((0.5-d_acc[i]['mi_acc'])*(0.5-d_meta[i]['meta_doa']))
+        sign=1
+        f1 = (d_acc[i]['mi_acc']-0.5)
+        f2 = (d_meta[i]['meta_doa']-0.5)
+        if f1<0 and f2<0 :
+            sign=-1
+        r.append(sign * f1 * f2)
     return sum(r)
 
 def setuplogger(verbose: bool = True, debug: bool=False, log_path: str = "../../experiments/logs/", log_name: str = None, os: str = 'Linux'):
