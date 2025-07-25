@@ -50,7 +50,7 @@ def launch_test(trial, train_data, valid_data, config):
     return pi
 
 def objective_hps(trial, config, train_data, valid_data):
-    meta_lr = trial.suggest_float('meta_lr', 0.005, 0.2, log=True)
+    meta_lr = trial.suggest_float('meta_lr', 0.001, 2.0, log=True)
     learning_users_emb_lr = trial.suggest_float('learning_users_emb_lr',1e-4, 1e-3, log=True)
     
     config['meta_lr'] = meta_lr

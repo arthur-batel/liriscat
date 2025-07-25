@@ -62,7 +62,7 @@ def main(dataset_name, nb_trials):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    config = liriscat.utils.generate_eval_config(dataset_name=dataset_name,load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['meta_doa'], save_params=False, n_query=6, num_epochs=100, patience = 20, num_inner_users_epochs=3, meta_trainer='BETA-CD', batch_size=512, lambda_=2.2656270501845414e-06, inner_user_lr=0.0016969685554352153, num_responses=12)
+    config = liriscat.utils.generate_eval_config(dataset_name=dataset_name,load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['meta_doa'], save_params=False, n_query=6, num_epochs=100, patience = 20, num_inner_users_epochs=3, meta_trainer='BETA-CD', batch_size=512, lambda_=9.972254466547545e-06, inner_user_lr=0.016848380924625605, num_responses=12)
 
     config['device'] = device
 
@@ -116,7 +116,7 @@ def main(dataset_name, nb_trials):
             print(f"Trial #{trial.number}: {trial.values}, Params: {trial.params}")
 
 if __name__ == '__main__':
-    dataset_name = "assist0910"
+    dataset_name = "math2"
     liriscat.utils.setuplogger(verbose = True, log_name=f"CAT_hps_{dataset_name}", debug=False)
     nb_trials = 25
     main(dataset_name, nb_trials)
