@@ -49,8 +49,8 @@ def main(dataset_name, nb_trials):
     config = utils_IMPACT.generate_hs_config(
         dataset_name=dataset_name,
         esc='error',
-        valid_metric='mi_acc',
-        pred_metrics=['mi_acc']
+        valid_metric='rmse',
+        pred_metrics=['rmse']
     )
     config['device'] = device
 
@@ -65,7 +65,7 @@ def main(dataset_name, nb_trials):
     study = optuna.create_study(
         study_name=study_name,
         storage=storage_name,
-        directions=["maximize"],
+        directions=["minimize"],
         load_if_exists=True,
     )
 
