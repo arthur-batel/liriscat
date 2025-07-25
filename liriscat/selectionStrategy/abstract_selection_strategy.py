@@ -96,6 +96,9 @@ class AbstractSelectionStrategy(ABC):
             case 'irt':
                 irt_config = utils.convert_config_to_EduCAT(self.config, metadata)
                 self.CDM = CDM.CATIRT(**irt_config)
+            case 'ncdm':
+                ncdm_config = utils.convert_config_to_EduCAT(self.config, metadata)
+                self.CDM = CDM.CATNCDM(**ncdm_config)
 
         logging.debug(f'----- Meta trainer init : {self.config["meta_trainer"]}')
         match self.config['meta_trainer']:

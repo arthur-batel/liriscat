@@ -37,17 +37,10 @@ class CATNCDM(NCDM) :
 
         
     def init_CDM_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
-        super().init_model(train_data.n_categories,train_data.n_questions, train_data.n_users)
+        super().init_model(train_data.n_categories,train_data.n_questions, train_data.n_users, self.config)
 
-        if self.config['load_params']:
-            self.load()
         # Replacement of pretrained users embeddings with randomly generated ones
         self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
-        
-
-    @property
-    def model(self):
-        return self.ncdm_net
     
     def get_params(self):
         return self.model.state_dict()
@@ -136,7 +129,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
-from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.metrics import roc_auc_score, accuracy_score, root_mean_squared_error
 from EduCDM import CDM
 
 
@@ -195,15 +188,32 @@ class Net(nn.Module):
 class NCDM(CDM):
     '''Neural Cognitive Diagnosis Model'''
 
-    def __init__(self, knowledge_n, exer_n, student_n):
+    @property
+    def name(self):
+        return "NCDM"
+
+    @property
+    def model(self):
+        return self.ncdm_net
+
+    def __init__(self, knowledge_n, exer_n, student_n, config):
         super(NCDM, self).__init__()
         self.ncdm_net = Net(knowledge_n, exer_n, student_n)
+        self.config = config
+
+        if self.config['load_params']:
+            self.load()
 
     def train(self, train_data, test_data=None, epoch=10, device="cpu", lr=0.002, silence=False):
         self.ncdm_net = self.ncdm_net.to(device)
         self.ncdm_net.train()
         loss_function = nn.BCELoss()
         optimizer = optim.Adam(self.ncdm_net.parameters(), lr=lr)
+
+        self.best_valid_rmse = float('inf')
+        self.best_epoch = 0
+        best_valid_params = None
+
         for epoch_i in range(epoch):
             epoch_losses = []
             batch_count = 0
@@ -224,10 +234,20 @@ class NCDM(CDM):
                 epoch_losses.append(loss.mean().item())
 
             print("[Epoch %d] average loss: %.6f" % (epoch_i, float(np.mean(epoch_losses))))
-
             if test_data is not None:
-                auc, accuracy = self.eval(test_data, device=device)
-                print("[Epoch %d] auc: %.6f, accuracy: %.6f" % (epoch_i, auc, accuracy))
+                rmse, accuracy = self.eval(test_data, device=device)
+                print("[Epoch %d] rmse: %.6f, accuracy: %.6f" % (epoch_i, rmse, accuracy))
+                if epoch_i - self.best_epoch > self.config['patience']:
+                    break
+                if rmse < self.best_valid_rmse:
+                    self.best_valid_rmse = rmse
+                    self.best_epoch = epoch_i
+                    best_valid_params = self.model.state_dict()
+
+        self.ncdm_net.load_state_dict(best_valid_params)
+
+        if self.config['save_params']:
+            self.save()
 
     def eval(self, test_data, device="cpu"):
         self.ncdm_net = self.ncdm_net.to(device)
@@ -242,22 +262,14 @@ class NCDM(CDM):
             y_pred.extend(pred.detach().cpu().tolist())
             y_true.extend(y.tolist())
 
-        return roc_auc_score(y_true, y_pred), accuracy_score(y_true, np.array(y_pred) >= 0.5)
+        return root_mean_squared_error(y_true, y_pred), accuracy_score(y_true, np.array(y_pred) >= 0.5)
     
     def save(self) :
-        path = self.config['params_path'] +  self.config['dataset_name']+'_'+ self.name + '_fold_' + str(self.config['i_fold']) + '_seed_' + str(
+        path = self.config['params_path'] + '_'+ self.name + '_fold_' + str(self.config['i_fold']) + '_seed_' + str(
             self.config['seed'])
         torch.save(self.model.state_dict(), path+".pt")
 
-    def save(self, filepath):
-        torch.save(self.ncdm_net.state_dict(), filepath)
-        logging.info("save parameters to %s" % filepath)
-
-    def load(self, filepath):
-        self.ncdm_net.load_state_dict(torch.load(filepath))  # , map_location=lambda s, loc: s
-        logging.info("load parameters from %s" % filepath)
-
     def load(self):
-        path = self.config['params_path'] +  self.config['dataset_name']+'_'+ self.name + '_fold_' + str(self.config['i_fold']) + '_seed_' + str(
+        path = self.config['params_path'] + '_'+ self.name + '_fold_' + str(self.config['i_fold']) + '_seed_' + str(
             self.config['seed'])
-        self.load(path+".pt")
+        self.model.load_state_dict(torch.load(path + '.pt',weights_only=True))
