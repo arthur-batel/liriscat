@@ -54,8 +54,7 @@ class CATIMPACT(IMPACT) :
         """
         Set the regularization term based on the posterior distribution learned on train and valid users.
         """
-        train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)),device=self.config['device'])
-        train_valid_users = train_valid_users.to(dtype=torch.long)
+        train_valid_users = self.model.train_valid_users.to(dtype=torch.long)
         
         # NO data leak to test dataset because we only look at the train and valid users 
         user_embeddings = self.model.users_emb(train_valid_users).float().detach()
