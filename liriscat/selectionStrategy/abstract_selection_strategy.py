@@ -275,7 +275,7 @@ class AbstractSelectionStrategy(ABC):
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
-        grads_R = (torch.nn.utils.clip_grad_norm_(grads_R[0], max_norm=10.0),)
+        grads_R = (torch.nn.utils.clip_grad_norm_(grads_R[0], max_norm=500.0),)
 
         P_L1 = F.softplus(self.meta_params[0,:])
         P_L3 = F.softplus(self.cross_cond[0,:])
