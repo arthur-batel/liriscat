@@ -375,7 +375,7 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             num_workers=num_workers, pin_memory=pin_memory)
 
 
-def convert_config_to_EduCAT(config, metadata, strategy_name: str, threshold: float = None, betas: float = None,
+def convert_config_to_EduCAT(config, metadata, strategy_name: str='RANDOM', threshold: float = None, betas: float = None,
                              start=None, end=None, policy_path=None, prednet_len1=None, prednet_len2=None,
                              meta_param=None, available_mask=None, train_mask=None, mode=None, epoch=None):
     config['num_dim'] = metadata['num_dimension_id']

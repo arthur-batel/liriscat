@@ -1,12 +1,12 @@
 from collections import defaultdict
 from typing import List
-from functools import partial
+
 import pandas as pd
 import random
 import numpy as np
 import torch
 
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 import sys
@@ -17,20 +17,29 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 from IMPACT import utils as utils_IMPACT
 utils_IMPACT.set_seed(0)
-from IMPACT import dataset as dataset_IMPACT
-from IMPACT import model as model_IMPACT
-import optuna
-import logging
+
 import gc
 import json
 from importlib import reload
 
-from ipyparallel import Client
-import dill
+from torch.utils.data import TensorDataset, DataLoader
 
 cat_absolute_path = os.path.abspath('../../')
 
 from liriscat import utils as utils_liriscat
+
+def transform(user, item, item2knowledge, score, batch_size, n_dim):
+    knowledge_emb = torch.zeros((len(item), n_dim))
+    for idx in range(len(item)):
+        knowledge_emb[idx][np.array(item2knowledge[item[idx].item()]) - 1] = 1.0
+
+    data_set = TensorDataset(
+        torch.tensor(user, dtype=torch.int64),  # (1, user_n) to (0, user_n-1)
+        torch.tensor(item, dtype=torch.int64),  # (1, item_n) to (0, item_n-1)
+        knowledge_emb,
+        torch.tensor(score, dtype=torch.float32)-1
+    )
+    return DataLoader(data_set, batch_size=batch_size, shuffle=True)
 
 def stat_unique(data: pd.DataFrame, key):
     """
