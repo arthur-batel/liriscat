@@ -15,26 +15,33 @@ Approx_GAP; algebra; -0.004486502044991705; 'meta_lr':0.9940914831732431
 Approx_GAP; math2; 0.018062758779907928; meta_lr = 1.9705711858670787
 Approx_GAP; assist0910;-0.016323526192888748; meta_lr = 0.022968659097285172
 
-MICAT;algebra;0.2651824694258601; meta_lr = 1.1452723921157866, learning_users_emb_lr = 0.0002625100105388952
-MICAT;math2;0.05108007452161366; meta_lr = 0.3152974015893513,learning_users_emb_lr = 0.0009491244870352869
+MICAT;algebra;0.2650595339657155; meta_lr = 0.903212817297109, learning_users_emb_lr = 0.0003283859170909053
+MICAT; math2; 0.051393461218760164; meta_lr = 0.015748433548397785,learning_users_emb_lr = 0.0009130750821093905
+MICAT;Assist0910;0.168780769495878; meta_lr = 1.8693376654194598,learning_users_emb_lr = 0.0009524926919905182
 
 
-CAT;dataset; valid_metric; best_valid_metric; best hyperparams rounded
-Naive CAT + Adam;algebra; 0.16738478334465626; {'inner_user_lr': 0.01, 'num_inner_users_epochs': 7}
-Naive CAT + Adam;math2;0.038769393499290594;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 10}
-Naive CAT + Adam;assist0910;0.15279453399372322;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 9}
+---------------------------------------------------------------------------------------------------------------------------
+CAT;dataset; valid_metric; best hyperparams rounded
 
-Beta_cd; algebra; 0.3433110466242833; meta_lr = 0.001, kl_weight = 0.001
-Beta-cd; math2; 0.06558550583150904; meta_lr = 0.05, kl_weight = 0.0001
-Beta-CD;assist0910;0.26407555832991303;{'meta_lr': 0.005, 'kl_weight': 0.0001}
+Naive CAT + Adam;algebra; {'inner_user_lr': 0.01, 'num_inner_users_epochs': 7}
+Naive CAT + Adam;math2;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 10}
+Naive CAT + Adam;assist0910;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 9}
 
-MAML; algebra; 0.25887603155311506;{'meta_lr': 0.05, 'inner_user_lr': 0.01}
-MAML; math2; 0.09858056281855455; meta_lr = 0.01, inner_user_lr = 0.005
-MAML; assist0910; 0.1423028475125981; {'meta_lr': 0.05, 'inner_user_lr': 0.01}
+Beta_cd; algebra; meta_lr = 0.001, kl_weight = 0.001
+Beta-cd; math2; meta_lr = 0.05, kl_weight = 0.0001
+Beta-CD;assist0910;{'meta_lr': 0.005, 'kl_weight': 0.0001}
 
-Approx_GAP; algebra; -0.004486502044991705; 'meta_lr':1.0
-Approx_GAP; math2; 0.018062758779907928; meta_lr = 2.0
-Approx_GAP; assist0910;-0.016323526192888748; meta_lr = 0.01
+MAML; algebra;{'meta_lr': 0.05, 'inner_user_lr': 0.01}
+MAML; math2; meta_lr = 0.01, inner_user_lr = 0.005
+MAML; assist0910; {'meta_lr': 0.05, 'inner_user_lr': 0.01}
 
-MICAT;algebra;0.2651824694258601; meta_lr = 1.0, learning_users_emb_lr = 0.0001
-MICAT; math2;0.05108007452161366; meta_lr = 0.5,learning_users_emb_lr = 0.001
+Approx_GAP; algebra; 'meta_lr':1.0
+Approx_GAP; math2; meta_lr = 2.0
+Approx_GAP; assist0910; meta_lr = 0.01
+
+MICAT;algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0001
+MICAT; math2; meta_lr = 0.5,learning_users_emb_lr = 0.001
+
+MICAT;algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0005
+MICAT; math2; meta_lr = 0.01,learning_users_emb_lr = 0.001
+MICAT;Assist0910; meta_lr = 2.0,learning_users_emb_lr = 0.001
