@@ -69,6 +69,9 @@ class CATIMPACT(IMPACT) :
         
         self.initialized_users_prior = True
 
+    def set_regularizer_with_prior(self):
+        self.get_regularizer = self.get_regularizer_with_prior
+
     def get_regularizer_with_prior(self,unique_users, unique_items, user_emb):    
         A = (user_emb[unique_users] - self.model.prior_mean)  # [nb_users, d_in]
         S = self.model.prior_cov_inv

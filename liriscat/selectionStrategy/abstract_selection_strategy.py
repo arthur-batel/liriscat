@@ -272,6 +272,7 @@ class AbstractSelectionStrategy(ABC):
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_L3 = torch.autograd.grad(L3, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
+        grads_R = (torch.nn.utils.clip_grad_norm_(grads_R[0], max_norm=10.0),)
 
         P_L1 = F.softplus(self.meta_params[0,:])
         P_L3 = F.softplus(self.cross_cond[0,:])
@@ -280,7 +281,7 @@ class AbstractSelectionStrategy(ABC):
         w_L3_norm = F.softplus(self.cross_cond[1,0])
 
         P1 = P_L1+w_L1_norm*F.sigmoid(grads_L3[0].norm())
-        P3 = P_L3+w_L3_norm*F.sigmoid(grads_L1[0].norm()+grads_R[0].norm())
+        P3 = P_L3+w_L3_norm*F.sigmoid(grads_L1[0].norm()+F.softplus(self.meta_lambda)*grads_R[0].norm())
 
         updated_users_emb = learning_users_emb - P1 * (grads_L1[0]+F.softplus(self.meta_lambda)*grads_R[0]) - P3 * grads_L3[0] 
 
@@ -702,7 +703,7 @@ class AbstractSelectionStrategy(ABC):
 
             case 'GAP':
                 self.inner_step = self.GAP_inner_step
-                self.CDM.get_regularizer = functools.partial(self.CDM.get_regularizer_with_prior)
+                self.CDM.set_regularizer_with_prior()
 
                 # Meta parameters declaration
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
