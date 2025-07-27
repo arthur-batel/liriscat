@@ -7,39 +7,39 @@ import logging
 from functools import partial
 from IMPACT import utils as utils_IMPACT
 from IMPACT.model import IMPACT
-from IMPACT.dataset import LoaderDataset as IMPACT_dataset
 from liriscat.dataset.preprocessing_utilities import *
 from optuna.exceptions import DuplicatedStudyError
-from liriscat.utils import convert_config_to_EduCAT
-from liriscat.dataset import preprocessing_utilities as pu
-from liriscat.CDM.NCDM import NCDM
 
 import os, torch
 print("PID", os.getpid(), "sees CUDA_VISIBLE_DEVICES =", os.environ.get("CUDA_VISIBLE_DEVICES"))
 print("→ torch.device is", torch.cuda.current_device(), torch.cuda.get_device_name(0))
 
-def launch_test(trial, train_data, valid_data, config,  metadata):
+def launch_test(trial, train_data, valid_data, config):
     gc.collect()
     torch.cuda.empty_cache()
 
-    cdm = NCDM(metadata['num_dimension_id'], metadata['num_item_id'], metadata['num_user_id'], config)
-    cdm.train(train_data, valid_data, epoch=config['num_epochs'], device="cuda")
+    algo = IMPACT(**config)
+    algo.init_model(train_data, valid_data)
+    algo.train(train_data, valid_data)
 
-    best_valid_metric = cdm.best_valid_rmse
+    best_valid_metric = algo.best_valid_metric
     logging.info(f"Trial {trial.number}: Best metric: {best_valid_metric}")
 
-    del cdm
+    del algo
     gc.collect()
     torch.cuda.empty_cache()
 
     return best_valid_metric
 
-def objective_hps(trial, config, train_data, valid_data, metadata):
+def objective_hps(trial, config, train_data, valid_data):
     lr = trial.suggest_float('learning_rate', 1e-5, 5e-2, log=True)
+    lambda_param = trial.suggest_float('lambda', 1e-8, 1e-4, log=True)
 
     config['learning_rate'] = lr
+    config['lambda'] = lambda_param
+    config['num_responses'] = 12
 
-    return launch_test(trial, train_data, valid_data, config, metadata)
+    return launch_test(trial, train_data, valid_data, config)
 
 def main(dataset_name, nb_trials):
     # SLURM auto-assigns a GPU (index 0 for each task as visible)
@@ -49,30 +49,17 @@ def main(dataset_name, nb_trials):
     config = utils_IMPACT.generate_hs_config(
         dataset_name=dataset_name,
         esc='error',
-        valid_metric='mi_acc',
-        pred_metrics=['mi_acc']
+        valid_metric='rmse',
+        pred_metrics=['rmse']
     )
     config['device'] = device
 
     utils_IMPACT.set_seed(config["seed"])
-
-    concept_map, metadata, nb_modalities = pu.load_dataset_resources(config)
-
-    config = convert_config_to_EduCAT(config, metadata)
-
-    vertical_train, vertical_valid = pu.vertical_data(config, config['i_fold'])
-
-    impact_train_data = IMPACT_dataset(vertical_train, concept_map, metadata, nb_modalities)
-    impact_valid_data = IMPACT_dataset(vertical_valid, concept_map, metadata, nb_modalities)
-
-    train_data, valid_data = [
-        pu.transform(data.raw_data_array[:,0].long(), data.raw_data_array[:,1].long(), concept_map, data.raw_data_array[:,2], config['batch_size'], impact_train_data.n_categories)
-        for data in [impact_train_data, impact_valid_data]
-    ]
+    train_data, valid_data, concept_map, metadata = load_dataset(config)
 
     # Shared SQLite storage accessible by all parallel tasks
-    storage_name = f"sqlite:///{dataset_name}_NCDM.db"
-    study_name = f"hps_parallel_{dataset_name}_NCDM"
+    storage_name = f"sqlite:///{dataset_name}_IMPACT_rmse.db"
+    study_name = f"hps_parallel_{dataset_name}_IMPACT"
 
 
     study = optuna.create_study(
@@ -86,7 +73,6 @@ def main(dataset_name, nb_trials):
         objective_hps, config=config,
         train_data=train_data,
         valid_data=valid_data,
-        metadata=metadata
     )
 
     study.optimize(objective, n_trials=nb_trials, n_jobs=1, gc_after_trial=True)
@@ -99,5 +85,5 @@ def main(dataset_name, nb_trials):
 
 if __name__ == '__main__':
     dataset_name = "assist0910"
-    nb_trials = 25
+    nb_trials = 50
     main(dataset_name, nb_trials)

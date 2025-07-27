@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=hps_parallel_assist0910_IMPACT
+#SBATCH --job-name=hps_parallel_algebra_NCDM
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --constraint=v100-16g

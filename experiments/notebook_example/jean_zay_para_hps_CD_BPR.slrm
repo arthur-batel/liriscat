@@ -15,4 +15,4 @@ module purge
 module load pytorch-gpu/py3/2.7.0
 
 # Run multiple parallel processes, each one independently
-srun python CDM_hps_parallelized_version-SLURM_CD-BPR.py 
+srun python CDM_hps_parallelized_version-SLURM_CD_BPR.py 

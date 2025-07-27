@@ -53,12 +53,12 @@ def main(dataset_name, i_fold=None):
         profile_metrics = ['meta_doa','pc-er','rm'],
         CDM = 'impact',
         meta_trainer='GAP',
-        valid_metric= 'mi_acc',
+        valid_metric= 'rmse',
         n_query=16,
         num_inner_users_epochs=3,
-        lambda_=9.972254466547545e-06,
-        inner_user_lr=0.016848380924625605,
-        meta_lr=0.01
+        lambda_=2.67605964593852e-06,
+        inner_user_lr=0.0030272604785952922,
+        meta_lr=2.0
     )
     config['learning_users_emb_lr'] = 0.001
     logging.info(f'#### config : {config} ####')

@@ -53,11 +53,11 @@ def main(dataset_name, i_fold=None):
         profile_metrics = ['meta_doa','pc-er','rm'],
         CDM = 'impact',
         meta_trainer='Adam',
-        valid_metric= 'mi_acc',
-        n_query=16,
-        num_inner_users_epochs=9,
-        lambda_=2.2656270501845414e-06,
-        inner_user_lr=0.05
+        valid_metric= 'rmse',
+        n_query=25,
+        num_inner_users_epochs=7,
+        lambda_=6.883708386254995e-06,
+        inner_user_lr=0.01
     )
     logging.info(f'#### config : {config} ####')
 
