@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cdm_pretrain_assist0910_IMPACT
+#SBATCH --job-name=cdm_pretrain_algebra_IMPACT
 #SBATCH --output=logs/%x_%A_%a.out  # %x=job-name, %A=array master ID, %a=task ID
 #SBATCH --error=logs/%x_%A_%a.err
 #SBATCH --constraint=v100-16g
@@ -18,4 +18,4 @@ module load pytorch-gpu/py3/2.7.0
 mkdir -p "${SLURM_SUBMIT_DIR}/logs"
 
 # SLURM_ARRAY_TASK_ID is 0–4
-srun python CDM_pre_train_parallel-SLURM_CD-BPR.py assist0910 --i_fold $SLURM_ARRAY_TASK_ID
+srun python CDM_pre_train_parallel-SLURM_CD_BPR.py algebra --i_fold $SLURM_ARRAY_TASK_ID

@@ -4,11 +4,12 @@ import argparse
 import os
 import sys
 
-def dump_sqlite_db(db_path):
+def dump_sqlite_db(db_path, minimize):
     if not os.path.isfile(db_path):
         print(f"❌ Fichier introuvable : {db_path}", file=sys.stderr)
         sys.exit(1)
 
+    minimize = bool(int(minimize))
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -57,19 +58,29 @@ def dump_sqlite_db(db_path):
         print()
 
     # 3. Meilleur trial global
-    def get_best(where_clause="", params=()):
-        query = (
-            "SELECT trial_id, value "
-            "FROM trial_values "
-            f"{where_clause} "
-            "ORDER BY value DESC "
-            "LIMIT 1;"
-        )
+    def get_best(where_clause="", params=(), minimize=False):
+
+        if minimize : 
+            query = (
+                "SELECT trial_id, value "
+                "FROM trial_values "
+                f"{where_clause} "
+                "ORDER BY value ASC "
+                "LIMIT 1;"
+            )
+        else : 
+            query = (
+                "SELECT trial_id, value "
+                "FROM trial_values "
+                f"{where_clause} "
+                "ORDER BY value DESC "
+                "LIMIT 1;"
+            )
         cursor.execute(query, params)
         return cursor.fetchone()
 
     # a) global
-    best = get_best()
+    best = get_best(minimize=minimize)
     if best:
         best_id, best_value = best
         print(f"🏆 Meilleur trial global : ID={best_id}  value={best_value}")
@@ -90,7 +101,7 @@ def dump_sqlite_db(db_path):
     print()
 
     # b) meilleur trial avec trial_id <= 100
-    limited_best = get_best("WHERE trial_id <= ?", (100,))
+    limited_best = get_best("WHERE trial_id <= ?", (100,),minimize=minimize)
     if limited_best:
         lid, lval = limited_best
         print(f"🎯 Meilleur trial avec trial_id ≤ 100 : ID={lid}  value={lval}")
@@ -119,9 +130,14 @@ def main():
         "dbfile",
         help="Chemin vers le fichier .db ou .sqlite",
     )
+    parser.add_argument(
+        "min",
+        help="Specify if best if the min or not",
+    )
+    
     args = parser.parse_args()
-    dump_sqlite_db(args.dbfile)
-
+    
+    dump_sqlite_db(args.dbfile,args.min)
 
 if __name__ == "__main__":
     main()

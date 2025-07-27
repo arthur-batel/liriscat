@@ -8,9 +8,9 @@ import argparse
 def main(dataset_name, i_fold=None):
 
     # Set all the required parameters ---------------
-    IMPACT_config = generate_eval_config(num_epochs=200, save_params=True, dataset_name=dataset_name,
+    IMPACT_config = generate_eval_config(num_epochs=200, patience=30, save_params=True, dataset_name=dataset_name,
                                          embs_path="../embs/" + dataset_name, params_path="../ckpt/" + dataset_name,
-                                         learning_rate=0.0016969685554352153, lambda_=2.2656270501845414e-06, batch_size=2048,valid_metric='mi_acc', pred_metrics=["mi_acc"],profile_metrics=['doa'])
+                                         learning_rate=0.008921749543575398, lambda_=6.883708386254995e-06, batch_size=2048,valid_metric='rmse', pred_metrics=["mi_acc", 'rmse'],profile_metrics=['doa'])
 
     concept_map, metadata, nb_modalities = pu.load_dataset_resources(IMPACT_config)
 

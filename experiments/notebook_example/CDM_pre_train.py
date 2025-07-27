@@ -11,7 +11,7 @@ def main(dataset_name):
     # Set all the required parameters ---------------
     IMPACT_config = generate_eval_config(num_epochs=200, save_params=True, dataset_name=dataset_name,
                                          embs_path="../embs/" + dataset_name, params_path="../ckpt/" + dataset_name,
-                                         learning_rate=0.02026, lambda_=1.2e-5, batch_size=2048,valid_metric='mi_acc', pred_metrics=["mi_acc"],profile_metrics=['doa'])
+                                         learning_rate=0.02026, lambda_=1.2e-5, batch_size=2048,valid_metric='rmse', pred_metrics=["mi_acc, rmse"],profile_metrics=['doa'])
 
     concept_map, metadata, nb_modalities = pu.load_dataset_resources(IMPACT_config)
 

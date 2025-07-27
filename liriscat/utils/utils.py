@@ -398,6 +398,8 @@ def convert_config_to_EduCAT(config, metadata, strategy_name: str='RANDOM', thre
     config['prednet_len1'] = prednet_len1
     config['prednet_len2'] = prednet_len2
 
+    return config
+
 
 def evaluate_doa(E, R, metadata, concept_map):
     q = {}
