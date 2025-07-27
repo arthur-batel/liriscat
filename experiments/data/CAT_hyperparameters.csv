@@ -39,9 +39,6 @@ Approx_GAP; algebra; 'meta_lr':1.0
 Approx_GAP; math2; meta_lr = 2.0
 Approx_GAP; assist0910; meta_lr = 0.01
 
-MICAT;algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0001
-MICAT; math2; meta_lr = 0.5,learning_users_emb_lr = 0.001
-
 MICAT;algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0005
 MICAT; math2; meta_lr = 0.01,learning_users_emb_lr = 0.001
 MICAT;Assist0910; meta_lr = 2.0,learning_users_emb_lr = 0.001
