@@ -7,8 +7,6 @@ from IMPACT.model.IMPACT import resp_to_mod
 
 import torch.utils.data as data
 
-from EduCDM import NCDM
-
 from IMPACT.dataset import *
 from IMPACT.model import IMPACT, IMPACTModel_low_mem, IMPACTModel, custom_loss_low_mem, custom_loss
 import torch.nn.functional as F
@@ -26,98 +24,6 @@ warnings.filterwarnings(
     message=r".*The PyTorch API of MaskedTensors is in prototype stage and will change in the near future. Please open a Github issue for features requests and see our documentation on the torch.masked module for further information about the project.*",
     category=UserWarning
 )
-
-
-
-class CATNCDM(NCDM) :
-
-    def __init__(self, **config):
-        self.config=config
-        self.initialized_users_prior = False
-
-        
-    def init_CDM_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
-        super().init_model(train_data.n_categories,train_data.n_questions, train_data.n_users, self.config)
-
-        # Replacement of pretrained users embeddings with randomly generated ones
-        self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
-    
-    def get_params(self):
-        return self.model.state_dict()
-
-    def init_test(self, test_data):
-        pass  
-
-    def init_users_prior(self, train_data, valid_data):
-        """
-        Set the regularization term based on the posterior distribution learned on train and valid users.
-        """
-        train_valid_users = self.model.train_valid_users.to(dtype=torch.long)
-        
-        # NO data leak to test dataset because we only look at the train and valid users 
-        user_embeddings = self.model.users_emb(train_valid_users).float().detach()
-        
-        ave = user_embeddings.mean(dim=0)
-
-        self.model.cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
-
-        self.model.prior_cov_inv = torch.inverse(self.model.cov_matrix)
-        self.model.prior_mean = ave.unsqueeze(0)
-        
-        self.initialized_users_prior = True
-
-    def set_regularizer_with_prior(self):
-        self.get_regularizer = self.get_regularizer_with_prior
-
-    def get_regularizer_with_prior(self,unique_users, unique_items, user_emb):    
-        A = (user_emb[unique_users] - self.model.prior_mean)  # [nb_users, d_in]
-        S = self.model.prior_cov_inv
-        SA_T = torch.matmul(A, S)  
-
-        return torch.bmm(SA_T.unsqueeze(1), A.unsqueeze(2)).sum()
-
-    def _loss_function(self, users_id, items_id, concepts_id, labels):
-        return self._compute_loss(users_id, items_id, concepts_id, labels)
-
-    def _compute_loss(self, users_id, items_id, concepts_id, labels, learning_users_emb):
-
-        preds = self.forward(users_id, items_id, concepts_id, learning_users_emb)
-
-        L1 = nn.BCELoss(preds,labels)
-
-        unique_users =  torch.unique(users_id)
-        unique_items = torch.unique(items_id)
-
-        R = self.get_regularizer(unique_users, unique_items, learning_users_emb)
-
-        return L1, torch.tensor([1.0]), R
-    
-    def get_regularizer(self,unique_users, unique_items, learning_users_emb):
-
-        return learning_users_emb[unique_users].norm().pow(2)
-    
-    def forward(self, users_id, items_id, concepts_id, users_emb):
-
-        stu_emb = users_emb[users_id]  # [batch_size, knowledge_dim]
-        stat_emb = torch.sigmoid(stu_emb)
-        k_difficulty = torch.sigmoid(self.k_difficulty(items_id))
-        e_difficulty = torch.sigmoid(self.e_difficulty(items_id))  # * 10
-        # prednet
-        input_x = e_difficulty * (stat_emb - k_difficulty) * concepts_id
-        input_x = self.drop_1(torch.sigmoid(self.prednet_full1(input_x)))
-        input_x = self.drop_2(torch.sigmoid(self.prednet_full2(input_x)))
-        output_1 = torch.sigmoid(self.prednet_full3(input_x))
-
-        return output_1.view(-1)
-
-    
-    def get_modalities_emb(self, items_id):
-
-        # Compute item-response indices
-        im_idx = self.model.im_idx[items_id]  # [batch_size, nb_mod]
-        im_emb_prime = self.model.item_response_embeddings(im_idx)  # [batch_size, nb_mod, embedding_dim]
-
-        return im_emb_prime
 
 # coding: utf-8
 # 2021/4/1 @ WangFei
@@ -273,3 +179,93 @@ class NCDM(CDM):
         path = self.config['params_path'] + '_'+ self.name + '_fold_' + str(self.config['i_fold']) + '_seed_' + str(
             self.config['seed'])
         self.model.load_state_dict(torch.load(path + '.pt',weights_only=True))
+
+class CATNCDM(NCDM) :
+
+    def __init__(self, **config):
+        self.config=config
+        self.initialized_users_prior = False
+
+        
+    def init_CDM_model(self, train_data: dataset.Dataset, valid_data: dataset.Dataset):
+        super().init_model(train_data.n_categories,train_data.n_questions, train_data.n_users, self.config)
+
+        # Replacement of pretrained users embeddings with randomly generated ones
+        self.model.train_valid_users = torch.tensor(list(train_data.users_id.union(valid_data.users_id)), device=self.config['device'])
+    
+    def get_params(self):
+        return self.model.state_dict()
+
+    def init_test(self, test_data):
+        pass  
+
+    def init_users_prior(self, train_data, valid_data):
+        """
+        Set the regularization term based on the posterior distribution learned on train and valid users.
+        """
+        train_valid_users = self.model.train_valid_users.to(dtype=torch.long)
+        
+        # NO data leak to test dataset because we only look at the train and valid users 
+        user_embeddings = self.model.users_emb(train_valid_users).float().detach()
+        
+        ave = user_embeddings.mean(dim=0)
+
+        self.model.cov_matrix = torch.cov(user_embeddings.T).to(dtype=torch.float)
+
+        self.model.prior_cov_inv = torch.inverse(self.model.cov_matrix)
+        self.model.prior_mean = ave.unsqueeze(0)
+        
+        self.initialized_users_prior = True
+
+    def set_regularizer_with_prior(self):
+        self.get_regularizer = self.get_regularizer_with_prior
+
+    def get_regularizer_with_prior(self,unique_users, unique_items, user_emb):    
+        A = (user_emb[unique_users] - self.model.prior_mean)  # [nb_users, d_in]
+        S = self.model.prior_cov_inv
+        SA_T = torch.matmul(A, S)  
+
+        return torch.bmm(SA_T.unsqueeze(1), A.unsqueeze(2)).sum()
+
+    def _loss_function(self, users_id, items_id, concepts_id, labels):
+        return self._compute_loss(users_id, items_id, concepts_id, labels)
+
+    def _compute_loss(self, users_id, items_id, concepts_id, labels, learning_users_emb):
+
+        preds = self.forward(users_id, items_id, concepts_id, learning_users_emb)
+
+        L1 = nn.BCELoss(preds,labels)
+
+        unique_users =  torch.unique(users_id)
+        unique_items = torch.unique(items_id)
+
+        R = self.get_regularizer(unique_users, unique_items, learning_users_emb)
+
+        return L1, torch.tensor([1.0]), R
+    
+    def get_regularizer(self,unique_users, unique_items, learning_users_emb):
+
+        return learning_users_emb[unique_users].norm().pow(2)
+    
+    def forward(self, users_id, items_id, concepts_id, users_emb):
+
+        stu_emb = users_emb[users_id]  # [batch_size, knowledge_dim]
+        stat_emb = torch.sigmoid(stu_emb)
+        k_difficulty = torch.sigmoid(self.k_difficulty(items_id))
+        e_difficulty = torch.sigmoid(self.e_difficulty(items_id))  # * 10
+        # prednet
+        input_x = e_difficulty * (stat_emb - k_difficulty) * concepts_id
+        input_x = self.drop_1(torch.sigmoid(self.prednet_full1(input_x)))
+        input_x = self.drop_2(torch.sigmoid(self.prednet_full2(input_x)))
+        output_1 = torch.sigmoid(self.prednet_full3(input_x))
+
+        return output_1.view(-1)
+
+    
+    def get_modalities_emb(self, items_id):
+
+        # Compute item-response indices
+        im_idx = self.model.im_idx[items_id]  # [batch_size, nb_mod]
+        im_emb_prime = self.model.item_response_embeddings(im_idx)  # [batch_size, nb_mod, embedding_dim]
+
+        return im_emb_prime
