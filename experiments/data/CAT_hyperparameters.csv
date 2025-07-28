@@ -29,6 +29,7 @@ ApproxGAP; algebra; meta_lr = 0.5
 ApproxGAP; math2; meta_lr = 0.01
 ApproxGAP; assist0910; meta_lr = 0.05
 
+BETA-CD; algebra; meta_lr=0.001, kl_weight = 0.0002
 BETA-CD; math2; meta_lr=0.05, kl_weight = 0.0005
 BETA-CD; assist0910; meta_lr=0.01, kl_weight = 0.0005
 
