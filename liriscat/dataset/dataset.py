@@ -353,15 +353,16 @@ class QueryEnv:
     The data of each batch of users overwrites the previous one in the data container to optimize GPU memory allocation
     """
 
-    def __init__(self, data: CATDataset, device: torch.device, batch_size: int):
+    def __init__(self, data: CATDataset, batch_size: int):
         """
 
         :param data: CATDataset object
         :param device: torch.device object
         :param batch_size: Number of users in the batch
         """
-        self.n_query = data.config['n_query'] # Nb of questions to query
-        self.device = device
+        self.config = data.config
+        self.n_query = self.config['n_query'] # Nb of questions to query
+        self.device = self.config['device']
         self.cq_max = data.cq_max # Max nb of categories per question
         self.nb_modalities = data.nb_modalities # Number of modalities (nb of categories)
 
@@ -369,29 +370,28 @@ class QueryEnv:
         self.n_meta = data.n_meta # Size of the meta set (nb of questions set aside for each user in order to perform evaluation)
         max_sub_data_batch_size = batch_size * self.n_query * self.cq_max  # maximum size of all the submitted data in this batch
 
-
         # Initialize attributes
         ## Variable storing the current batch size
         self._current_batch_size = batch_size
 
         ## Support container (torch.Tensor) storing all support data (query and submitted). 2D form: (l=users,c=questions). Before expansion for multiple categories/question
-        self._support_len = torch.empty(batch_size, dtype=torch.long, device=device) # Shape = U_batch
-        self._support_users_vec = torch.empty(batch_size, dtype=torch.long, device=device) # Shape = U_batch
-        self._support_questions = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=device) # Shape = U_batch x |max_u Q_sup(u)|
-        self._support_responses = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=device) # Shape = U_batch x |max_u Q_sup(u)|
-        self._support_cat_nb = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=device) # Shape = U_batch x |max_u Q_sup(u)|
-        self._support_cat = torch.empty(batch_size, data.sup_max * data.cq_max, dtype=torch.long, device=device) # Shape = U_batch x |max_u Q_sup(u)| x cq_max
-        self._support_cat_mask = torch.empty(batch_size, data.sup_max * data.cq_max, dtype=torch.bool, device=device) # Shape = U_batch x |max_u Q_sup(u)| x cq_max
+        self._support_len = torch.empty(batch_size, dtype=torch.long, device=self.device) # Shape = U_batch
+        self._support_users_vec = torch.empty(batch_size, dtype=torch.long, device=self.device) # Shape = U_batch
+        self._support_questions = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=self.device) # Shape = U_batch x |max_u Q_sup(u)|
+        self._support_responses = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=self.device) # Shape = U_batch x |max_u Q_sup(u)|
+        self._support_cat_nb = torch.empty(batch_size, data.sup_max, dtype=torch.long, device=self.device) # Shape = U_batch x |max_u Q_sup(u)|
+        self._support_cat = torch.empty(batch_size, data.sup_max * data.cq_max, dtype=torch.long, device=self.device) # Shape = U_batch x |max_u Q_sup(u)| x cq_max
+        self._support_cat_mask = torch.empty(batch_size, data.sup_max * data.cq_max, dtype=torch.bool, device=self.device) # Shape = U_batch x |max_u Q_sup(u)| x cq_max
 
         ## Submitted questions container (torch.Tensor) storing submitted data. 1D form: (l=users x questions x cat/q). After expansion for multiple categories/question
-        self._sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self._sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self._sub_nb_modalities = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self._sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
-        self._sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=device)
+        self._sub_user_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=self.device)
+        self._sub_question_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=self.device)
+        self._sub_nb_modalities = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=self.device)
+        self._sub_labels = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=self.device)
+        self._sub_category_ids = torch.empty(max_sub_data_batch_size, dtype=torch.long, device=self.device)
 
         ## Tensor storing the indices of the questions submitted to the user
-        self._support_indices = torch.arange(0, data.sup_max, device=device, dtype=torch.long).repeat(batch_size,
+        self._support_indices = torch.arange(0, data.sup_max, device=self.device, dtype=torch.long).repeat(batch_size,
                                                                                                       1)  # tensor of size (batch_size, sup_max)
 
         self._row_idx = torch.arange(batch_size)  # tensor of size (batch_size)
@@ -400,12 +400,12 @@ class QueryEnv:
         self._current_charged_log_nb = 0  # Index of the current number of submitted logs to the CDM (different from the number of submitted questions per users). Reinint at each user batch by UserCollate
 
         ## Tensors storing meta data
-        self._meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self._meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self._meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self._meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=device)
-        self._meta_cat = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.long, device=device)
-        self._meta_cat_mask = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.bool, device=device)
+        self._meta_users = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=self.device)
+        self._meta_questions = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=self.device)
+        self._meta_responses = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=self.device)
+        self._meta_cat_nb = torch.empty(batch_size, data.n_meta, dtype=torch.long, device=self.device)
+        self._meta_cat = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.long, device=self.device)
+        self._meta_cat_mask = torch.empty(batch_size, data.n_meta * data.cq_max, dtype=torch.bool, device=self.device)
 
     @property
     def current_batch_size(self):
@@ -574,7 +574,7 @@ class QueryEnv:
         with torch.no_grad():
             
 
-            new_user_ids, new_question_ids, new_labels, new_nb_modalities = self.generate_IMPACT_query(
+            new_user_ids, new_question_ids, new_labels, new_nb_modalities = self.generate_query(
                 self.support_questions[self.row_idx, actions_indices],
                 self.support_responses[self.row_idx, actions_indices],
                 self.support_cat_nb[self.row_idx, actions_indices],
@@ -616,19 +616,9 @@ class QueryEnv:
             'support_len': self.step_support_len(t)
         }
 
-    def feed_IMPACT_sub(self):
-        """
-        Return the dictionary of submitted data logs for IMPACT retraining
-        :return:
-        """
-        return {
-            "user_ids": self.sub_user_ids,
-            "question_ids": self.sub_question_ids,
-            "labels": self.sub_labels,
-            "category_ids": self.sub_category_ids,
-            "nb_modalities": self.sub_nb_modalities}
 
-    def generate_IMPACT_query(self, QQ, QL, QC_NB, U):
+
+    def generate_query(self, QQ, QL, QC_NB, U):
         """
         Extends the query data for Multiple Categories Handling (MCH) with IMPACT format
         :param QQ:
@@ -645,7 +635,19 @@ class QueryEnv:
 
         return users_id, questions_id, labels, nb_modalities
 
-    def generate_IMPACT_meta(self):
+    def feed_sub(self):
+        """
+        Return the dictionary of submitted data logs for IMPACT retraining
+        :return:
+        """
+        return {
+            "user_ids": self.sub_user_ids,
+            "question_ids": self.sub_question_ids,
+            "labels": self.sub_labels,
+            "category_ids": self.sub_category_ids,
+            "nb_modalities": self.sub_nb_modalities}
+
+    def generate_meta(self):
         """
         Extends the meta data for multiple categories handling with IMPACT format
         :return:
