@@ -23,6 +23,8 @@ MICAT;Assist0910; meta_lr = 2.0,learning_users_emb_lr = 0.001
 
 NCDM ---------------------------------------------------------------------------------------------------------------------------
 ApproxGAP; algebra; meta_lr = 0.1
+ApproxGAP; math2; meta_lr = 1.0
+ApproxGAP; assist0910; meta_lr = 2.0
 
 BETA-CD; assist0910; meta_lr=0.001, kl_weight = 0.0001
 
