@@ -374,33 +374,6 @@ def generate_eval_config(dataset_name: str = None, seed: int = 0, load_params: b
                             inner_lr=inner_lr, inner_user_lr=inner_user_lr, meta_lr=meta_lr, meta_trainer=meta_trainer,
                             num_workers=num_workers, pin_memory=pin_memory)
 
-
-def convert_config_to_EduCAT(config, metadata, strategy_name: str='RANDOM', threshold: float = None, betas: float = None,
-                             start=None, end=None, policy_path=None, prednet_len1=None, prednet_len2=None,
-                             meta_param=None, available_mask=None, train_mask=None, mode=None, epoch=None):
-    config['num_dim'] = metadata['num_dimension_id']
-    config['policy'] = strategy_name
-    # For NCAT
-    config['THRESHOLD'] = threshold
-    config['start'] = start
-    config['end'] = end
-
-    # For BOBCAT
-    config['betas'] = betas
-    config['policy_path'] = policy_path
-    config['meta_param'] = meta_param
-    config['available_mask'] = available_mask
-    config["train_mask"] = train_mask
-    config["mode"] = mode
-    config["epoch"] = epoch
-
-    # For NCD
-    config['prednet_len1'] = prednet_len1
-    config['prednet_len2'] = prednet_len2
-
-    return config
-
-
 def evaluate_doa(E, R, metadata, concept_map):
     q = {}
     for r in range(metadata['num_item_id']):
