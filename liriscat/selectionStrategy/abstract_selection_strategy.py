@@ -110,7 +110,10 @@ class AbstractSelectionStrategy(ABC):
             case 'MAML':
                 pass                
             case 'Adam':
-                self.inner_step = self.Adam_inner_step
+                if self.config['CDM']=='impact' :
+                    self.inner_step = self.Adam_inner_step
+                else : 
+                    self.inner_step = self.Adam_inner_step_one_loss
                 self.meta_params = None
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])  # Initial weights for Adam inner step
             case 'none':
@@ -284,7 +287,7 @@ class AbstractSelectionStrategy(ABC):
         P1 = P_L1+w_L1_norm*F.sigmoid(grads_L3[0].norm())
         P3 = P_L3+w_L3_norm*F.sigmoid(grads_L1[0].norm()+F.softplus(self.meta_lambda)*grads_R[0].norm())
 
-        updated_users_emb = learning_users_emb - P1 * (grads_L1[0]+F.softplus(self.meta_lambda)*grads_R[0]) - P3 * grads_L3[0] 
+        updated_users_emb = learning_users_emb - P1 * (grads_L1[0]+F.softplus(self.meta_lambda)*grads_R[0]) - P3 * grads_L3[0]
 
         return updated_users_emb
     
@@ -517,6 +520,9 @@ class AbstractSelectionStrategy(ABC):
                         grads_accum[0] = grads_accum[0] + grads[0]/ self.num_sample 
                         grads_accum[1] = grads_accum[1] + grads[1]/ self.num_sample
 
+                    grads_accum[0] = torch.nn.utils.clip_grad_norm_(grads_accum[0], max_norm=500.0)
+                    grads_accum[1] = torch.nn.utils.clip_grad_norm_(grads_accum[1], max_norm=500.0)
+                    
                     q_params[0] = q_params[0] - self.inner_lrs[k].abs() * grads_accum[0]
                     q_params[1] = q_params[1] - self.inner_lrs[k].abs() * grads_accum[1]
 
