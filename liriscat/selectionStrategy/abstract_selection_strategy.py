@@ -94,11 +94,9 @@ class AbstractSelectionStrategy(ABC):
             case 'impact':
                 self.CDM = CDM.CATIMPACT(**self.config)
             case 'irt':
-                irt_config = utils.convert_config_to_EduCAT(self.config, metadata)
-                self.CDM = CDM.CATIRT(**irt_config)
+                self.CDM = CDM.CATIRT(**self.config)
             case 'ncdm':
-                ncdm_config = utils.convert_config_to_EduCAT(self.config, metadata)
-                self.CDM = CDM.CATNCDM(**ncdm_config)
+                self.CDM = CDM.CATNCDM(**self.config)
 
         logging.debug(f'----- Meta trainer init : {self.config["meta_trainer"]}')
         match self.config['meta_trainer']:
@@ -340,6 +338,80 @@ class AbstractSelectionStrategy(ABC):
         self.user_params_optimizer.step()
         return users_emb
 
+    def GAP_inner_step_one_loss(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
+        """
+        Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
+        Args:
+            users_id, questions_id, labels, categories_id: batch data
+            users_emb: optional tensor to use as starting point (default: model's current embeddings)
+        Returns:
+            updated_users_emb: tensor of updated user embeddings (requires_grad)
+            loss: loss on the query set
+        """
+        # 2. Forward pass: compute loss using the copied embeddings
+        #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
+        L1, _, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+
+        # 3. Compute gradients w.r.t. the copied embeddings
+        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
+        grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
+        grads_R = (torch.nn.utils.clip_grad_norm_(grads_R[0], max_norm=500.0),)
+
+        P1 = F.softplus(self.meta_params[0,:])
+
+        updated_users_emb = learning_users_emb - P1 * (grads_L1[0]+F.softplus(self.meta_lambda)*grads_R[0]) 
+
+        return updated_users_emb
+    
+    def MAML_inner_step_one_loss(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
+        """
+        MAML inner step with manual gradient application to preserve computational graph
+        """
+        L1, _, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+        loss = L1 + self.config['lambda'] * R
+        
+        # Compute gradients with respect to learning_users_emb
+        grads = torch.autograd.grad(loss, learning_users_emb, create_graph=False)[0]
+        
+        # Manual gradient update (equivalent to optimizer step)
+        updated_learning_users_emb = learning_users_emb - self.config['inner_user_lr'] * grads
+        
+        return updated_learning_users_emb
+
+    def Approx_GAP_inner_step_one_loss(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
+        """
+        Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
+        Args:
+            users_id, questions_id, labels, categories_id: batch data
+            users_emb: optional tensor to use as starting point (default: model's current embeddings)
+        Returns:
+            updated_users_emb: tensor of updated user embeddings (requires_grad)
+            loss: loss on the query set
+        """
+        # 2. Forward pass: compute loss using the copied embeddings
+        #    (Assume CDM._compute_loss can take a users_emb argument, else you need to adapt your model)
+        L1, _, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=learning_users_emb)
+        
+        # 3. Compute gradients w.r.t. the copied embeddings
+        grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
+        grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
+
+        prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
+
+        updated_users_emb = learning_users_emb - prec_L1 * (grads_L1[0]) - self.config['lambda'] * grads_R[0] 
+
+        return updated_users_emb
+    
+    def Adam_inner_step_one_loss(self,users_id, questions_id, labels, categories_id, users_emb):
+
+        self.user_params_optimizer.zero_grad()
+
+        L1, _, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
+        loss = L1 + self.config['lambda'] * R
+        loss.backward()
+        self.user_params_optimizer.step()
+        return users_emb
+
     def inner_loop(self,query_data, users_emb):
         """
             User parameters update (theta) on the query set
@@ -393,6 +465,51 @@ class AbstractSelectionStrategy(ABC):
 
                         kl_loss = kl_divergence_gaussians(p=p_params,q=q_params)
                         loss = L1 + L3 + self.kl_weight * kl_loss
+
+                        zero_grad(q_params)
+                        grads = torch.autograd.grad(loss, q_params, retain_graph=True)
+        
+                        grads_accum[0] = grads_accum[0] + grads[0]/ self.num_sample 
+                        grads_accum[1] = grads_accum[1] + grads[1]/ self.num_sample
+
+                    q_params[0] = q_params[0] - self.inner_lrs[k].abs() * grads_accum[0]
+                    q_params[1] = q_params[1] - self.inner_lrs[k].abs() * grads_accum[1]
+
+                    self.CDM.model.eval()
+
+            return q_params
+
+    def beta_cd_inner_loop_one_loss(self,query_data, users_emb):
+        """
+            User parameters update (theta) on the query set
+        """
+        logging.debug("- Update users (BETA-CD inner loop) ")
+
+        with torch.enable_grad():
+
+            sub_data = dataset.SubmittedDataset(query_data)
+            sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
+
+            q_params = users_emb
+            lambda_mean = nn.Parameter(torch.tile(self.user_mean.clone().detach(), (self.metadata["num_user_id"], 1)).requires_grad_(True))
+            lambda_std = nn.Parameter(torch.tile(self.user_log_std.clone().detach(), (self.metadata["num_user_id"], 1)).requires_grad_(True))
+            p_params = [lambda_mean, lambda_std]
+
+            for k in range(self.config['num_inner_users_epochs']) :
+                   
+                for  batch in sub_dataloader:
+                    users_id, items_id, labels, concepts_id, _ = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
+    
+                    self.CDM.model.train()
+
+                    grads_accum = [torch.zeros_like(q_params[i]) for i in range(len(q_params))]
+
+                    for _ in range(self.num_sample):
+                        learning_users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                        L1, _, _ = self.CDM._compute_loss(users_id=users_id, items_id=items_id, concepts_id=concepts_id, labels=labels, learning_users_emb=learning_users_emb)
+
+                        kl_loss = kl_divergence_gaussians(p=p_params,q=q_params)
+                        loss = L1  + self.kl_weight * kl_loss
 
                         zero_grad(q_params)
                         grads = torch.autograd.grad(loss, q_params, retain_graph=True)
@@ -479,7 +596,7 @@ class AbstractSelectionStrategy(ABC):
             valid_query_env.load_batch(batch)
 
             # Prepare the meta set
-            meta_data = valid_query_env.generate_IMPACT_meta()
+            meta_data = valid_query_env.generate_meta()
 
             for i_query in range(self.config['n_query']):
 
@@ -488,27 +605,46 @@ class AbstractSelectionStrategy(ABC):
 
                 valid_query_env.update(actions, i_query)
 
-                learning_users_emb = self.inner_loop(valid_query_env.feed_IMPACT_sub(), learning_users_emb)
+                learning_users_emb = self.inner_loop(valid_query_env.feed_sub(), learning_users_emb)
 
             total_rmse, total_loss = 0.0, 0.0
-            if self.config['meta_trainer'] == 'BETA-CD':
-                q_params = learning_users_emb
-                for _ in range(self.num_sample):
-                    users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
-                    L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
-                    total_loss += L1 + L3 
-                    preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=users_emb)
-                    total_rmse += utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
-                
-                total_loss /= self.num_sample 
-                total_rmse /= self.num_sample
-            else:
-                L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'], learning_users_emb=learning_users_emb)
-                losses = torch.stack([L1, L3])  # Shape: (4,)
-                total_loss = torch.dot(self.weights, losses) 
-
-                preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
-                total_rmse = utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
+            if self.config['CDM'] == 'impact' : 
+                if self.config['meta_trainer'] == 'BETA-CD':
+                    q_params = learning_users_emb
+                    for _ in range(self.num_sample):
+                        users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                        L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
+                        total_loss += L1 + L3 
+                        preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=users_emb)
+                        total_rmse += utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
+                    
+                    total_loss /= self.num_sample 
+                    total_rmse /= self.num_sample
+                else:
+                    L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'], learning_users_emb=learning_users_emb)
+                    losses = torch.stack([L1, L3])  # Shape: (4,)
+                    total_loss = torch.dot(self.weights, losses) 
+    
+                    preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
+                    total_rmse = utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
+            else : 
+                if self.config['meta_trainer'] == 'BETA-CD':
+                        q_params = learning_users_emb
+                        for _ in range(self.num_sample):
+                            users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                            L1, _, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
+                            total_loss += L1
+                            preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=users_emb)
+                            total_rmse += utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
+                        
+                        total_loss /= self.num_sample 
+                        total_rmse /= self.num_sample
+                else:
+                    L1, _, _ = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'], learning_users_emb=learning_users_emb)
+                    total_loss = L1
+    
+                    preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
+                    total_rmse = utils.root_mean_squared_error(y_pred=preds, y_true=meta_data['labels'], nb_modalities=meta_data['nb_modalities'])
 
             # Check for NaN and skip if found
             logging.info(f"rmse : {total_rmse.item()}")
@@ -571,7 +707,7 @@ class AbstractSelectionStrategy(ABC):
 
         # Dataloaders preperation
         test_dataset.split_query_meta(self.config['seed'])
-        test_query_env = QueryEnv(test_dataset, self.device, self.config['valid_batch_size'])
+        test_query_env = QueryEnv(test_dataset, self.config['valid_batch_size'])
         test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
                                       shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
 
@@ -588,7 +724,7 @@ class AbstractSelectionStrategy(ABC):
             test_query_env.load_batch(batch)
 
             # Prepare the meta set
-            meta_data = test_query_env.generate_IMPACT_meta()
+            meta_data = test_query_env.generate_meta()
             nb_modalities = test_dataset.nb_modalities[meta_data['questions_id']]
 
             for i_query in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
@@ -598,7 +734,7 @@ class AbstractSelectionStrategy(ABC):
                 actions = self.select_action(options)
                 test_query_env.update(actions, i_query)
 
-                learning_users_emb = self.inner_loop(test_query_env.feed_IMPACT_sub(),learning_users_emb)
+                learning_users_emb = self.inner_loop(test_query_env.feed_sub(),learning_users_emb)
 
                 if self.config['meta_trainer'] == 'BETA-CD':
                     with torch.no_grad() :
@@ -642,14 +778,15 @@ class AbstractSelectionStrategy(ABC):
 
         logging.debug("------- Initialize CDM and Selection strategy")
         
+        self.CDM.init_CDM_model(train_dataset, valid_dataset)
+       
         match self.config['CDM']:
             case 'impact':
-                self.CDM.init_CDM_model(train_dataset, valid_dataset)
-
                 if hasattr(torch, "compile"):
                     logging.info("compiling CDM model")
                     self.CDM.model = torch.compile(self.CDM.model)
-
+                    
+        self.CDM.model.to(self.config['device'])
         self.CDM.init_users_prior(train_dataset, valid_dataset)
 
         if hasattr(torch, "compile") and not getattr(self, "model_compiled", False):
@@ -705,7 +842,11 @@ class AbstractSelectionStrategy(ABC):
         match self.config['meta_trainer']:
 
             case 'GAP':
-                self.inner_step = self.GAP_inner_step
+                if self.config['CDM']=='impact' :
+                    self.inner_step = self.GAP_inner_step
+                else : 
+                    self.inner_step = self.GAP_inner_step_one_loss
+                    
                 self.CDM.set_regularizer_with_prior()
 
                 # Meta parameters declaration
@@ -748,8 +889,11 @@ class AbstractSelectionStrategy(ABC):
                 self.meta_scaler = torch.amp.GradScaler(self.config['device'])
 
             case 'MAML':
-                self.inner_step = self.MAML_inner_step
-
+                if self.config['CDM']=='impact' :
+                    self.inner_step = self.MAML_inner_step
+                else : 
+                    self.inner_step = self.MAML_inner_step_one_loss
+                    
                 # Meta parameters declaration
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
                 self.learning_users_emb = nn.Parameter(torch.empty(self.metadata['num_dimension_id']), requires_grad=True)#.to(device=self.config['device'])
@@ -767,7 +911,10 @@ class AbstractSelectionStrategy(ABC):
                 
 
             case 'BETA-CD':
-                self.inner_loop = self.beta_cd_inner_loop
+                if self.config['CDM']=='impact' :
+                    self.inner_loop = self.beta_cd_inner_loop
+                else :
+                    self.inner_loop = self.beta_cd_inner_loop_one_loss
                 self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
 
                 self.num_sample = 10
@@ -797,7 +944,10 @@ class AbstractSelectionStrategy(ABC):
 
 
             case 'Approx_GAP':
-                self.inner_step = self.Approx_GAP_inner_step
+                if self.config['CDM']=='impact' :
+                    self.inner_step = self.Approx_GAP_inner_step
+                else : 
+                    self.inner_step = self.Approx_GAP_inner_step_one_loss
 
                 # Meta parameters declaration
                 self.meta_params = torch.nn.Parameter(torch.empty(1, self.metadata['num_dimension_id']))
@@ -849,8 +999,8 @@ class AbstractSelectionStrategy(ABC):
 
         valid_dataset.split_query_meta(self.config['seed']) # split valid query qnd meta set one and for all epochs
 
-        train_query_env = QueryEnv(train_dataset, self.device, self.config['batch_size'])
-        valid_query_env = QueryEnv(valid_dataset, self.device, self.config['valid_batch_size'])
+        train_query_env = QueryEnv(train_dataset, self.config['batch_size'])
+        valid_query_env = QueryEnv(valid_dataset, self.config['valid_batch_size'])
 
         train_loader = DataLoader(dataset=train_dataset, collate_fn=UserCollate(train_query_env), batch_size=self.config['batch_size'],
                                   shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
@@ -888,7 +1038,7 @@ class AbstractSelectionStrategy(ABC):
                 train_query_env.load_batch(batch)
 
                 # Prepare the meta set
-                meta_data = train_query_env.generate_IMPACT_meta()
+                meta_data = train_query_env.generate_meta()
 
                 for i_query in range(self.config['n_query']):
 
@@ -897,25 +1047,41 @@ class AbstractSelectionStrategy(ABC):
                     actions = self.select_action(train_query_env.get_query_options(i_query))
                     train_query_env.update(actions, i_query)
 
-                    i_query_data = train_query_env.feed_IMPACT_sub()
+                    i_query_data = train_query_env.feed_sub()
                 
                     learning_users_emb = self.inner_loop(i_query_data,learning_users_emb)
-
-                if self.config['meta_trainer'] == 'BETA-CD':
-                    q_params = learning_users_emb
-                    meta_loss = 0.0
-                    for _ in range(self.num_sample):
-                        users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
-                        L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
-                        meta_loss += L1 
-                    meta_loss /= self.num_sample
-                    mean_meta_loss += meta_loss / len(batch)
-                else:
-                    L1, L3, _ = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
-                    losses = torch.stack([L1, L3])  # Shape: (4,)
+                if self.config['CDM'] == 'impact' :
                     
-                    meta_loss = torch.dot(self.weights, losses) 
-                    mean_meta_loss += meta_loss / len(batch)
+                    if self.config['meta_trainer'] == 'BETA-CD':
+                        q_params = learning_users_emb
+                        meta_loss = 0.0
+                        for _ in range(self.num_sample):
+                            users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                            L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
+                            meta_loss += L1 + L3 
+                        meta_loss /= self.num_sample
+                        mean_meta_loss += meta_loss / len(batch)
+                    else:
+                        L1, L3, _ = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
+                        losses = torch.stack([L1, L3])  # Shape: (4,)
+                        
+                        meta_loss = torch.dot(self.weights, losses) 
+                        mean_meta_loss += meta_loss / len(batch)
+                else : 
+                    if self.config['meta_trainer'] == 'BETA-CD':
+                        q_params = learning_users_emb
+                        meta_loss = 0.0
+                        for _ in range(self.num_sample):
+                            users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                            L1, _, _ = self.CDM._compute_loss(users_id=meta_data['users_id'],items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], labels=meta_data['labels'],learning_users_emb=users_emb)
+                            meta_loss += L1 
+                        meta_loss /= self.num_sample
+                        mean_meta_loss += meta_loss / len(batch)
+                    else:
+                        L1, _, _ = self.CDM._compute_loss(users_id=meta_data["users_id"], items_id=meta_data["questions_id"], concepts_id=meta_data["categories_id"], labels=meta_data["labels"], learning_users_emb=learning_users_emb)
+                        
+                        meta_loss = L1
+                        mean_meta_loss += meta_loss / len(batch)
                     
             if self.config['meta_trainer'] != 'Adam':
                 self.update_meta_params(mean_meta_loss)
