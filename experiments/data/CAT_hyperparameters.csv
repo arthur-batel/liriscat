@@ -22,6 +22,10 @@ MICAT; math2; meta_lr = 0.01,learning_users_emb_lr = 0.001
 MICAT;Assist0910; meta_lr = 2.0,learning_users_emb_lr = 0.001
 
 NCDM ---------------------------------------------------------------------------------------------------------------------------
+ApproxGAP; algebra; meta_lr = 0.1
+
+BETA-CD; assist0910; meta_lr=0.001, kl_weight = 0.0001
+
 MAML; assist0910; meta_lr = 0.05, inner_user_lr = 0.0001
 
 MICAT; Algebra; meta_lr = 0.05, learning_users_emb_lr = 0.0005
