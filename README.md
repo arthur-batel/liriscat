@@ -4,7 +4,7 @@
 <h1 align="center"> An interpretable model for multi-target predictions with multi-class outputs </h1>
 
 ---
-Welcome to the official repository for LIRISCAT
+Welcome to the official repository for MICAT
 
 ## Installing IMPACT
 From source
@@ -37,7 +37,7 @@ conda activate liriscat-env
 - `figs/` : Contains the figures of the paper
 - `liriscat/` : Contains the source code of the IMPACT model
   - `liriscat/dataset/` : Contains the code of the dataset class
-  - `liriscat/models/` : Contains the code of the **LIRISCAT model** and its abstract class, handling the learning process
+  - `liriscat/models/` : Contains the code of the **MICAT model** and its abstract class, handling the learning process
   - `liriscat/utils/` : Contains utility functions for logging, complex metric computations, configuration handling, etc.
 ## Authors
 
