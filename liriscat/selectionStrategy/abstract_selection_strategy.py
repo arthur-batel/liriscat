@@ -239,6 +239,10 @@ class AbstractSelectionStrategy(ABC):
                 torch.nn.utils.clip_grad_norm_(self.meta_lambda, max_norm=1.0)
             if hasattr(self, 'inner_lrs') and self.inner_lrs is not None:
                 torch.nn.utils.clip_grad_norm_(self.inner_lrs, max_norm=10.0)
+            if hasattr(self, 'user_mean') and self.user_mean is not None:
+                torch.nn.utils.clip_grad_norm_(self.user_mean, max_norm=10.0)
+            if hasattr(self, 'user_log_std') and self.user_log_std is not None:
+                torch.nn.utils.clip_grad_norm_(self.user_log_std, max_norm=10.0)
                 
             self.meta_scaler.step(self.meta_optimizer)
             self.meta_scaler.update()
@@ -341,6 +345,13 @@ class AbstractSelectionStrategy(ABC):
         self.user_params_optimizer.step()
         return users_emb
 
+    def clip_tensor_list_by_global_norm(self,tensor_list, max_norm):
+        total_norm = torch.norm(torch.stack([torch.norm(t) for t in tensor_list]))
+        clip_coef = max_norm / (total_norm + 1e-6)
+        if clip_coef < 1:
+            tensor_list = [t * clip_coef for t in tensor_list]
+        return tensor_list
+
     def GAP_inner_step_one_loss(self, users_id, questions_id, labels, categories_id, learning_users_emb=None):
         """
         Meta-learning style inner step: returns updated user embeddings tensor (does not update model in-place).
@@ -358,7 +369,9 @@ class AbstractSelectionStrategy(ABC):
         # 3. Compute gradients w.r.t. the copied embeddings
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
-        grads_R = (torch.nn.utils.clip_grad_norm_(grads_R[0], max_norm=500.0),)
+
+        grads_L1 = self.clip_tensor_list_by_global_norm(grads_L1,max_norm=500.0)
+        grads_R = self.clip_tensor_list_by_global_norm(grads_R,max_norm=500.0)
 
         P1 = F.softplus(self.meta_params[0,:])
 
@@ -375,6 +388,8 @@ class AbstractSelectionStrategy(ABC):
         
         # Compute gradients with respect to learning_users_emb
         grads = torch.autograd.grad(loss, learning_users_emb, create_graph=False)[0]
+
+        grads = self.clip_tensor_list_by_global_norm(grads,max_norm=100.0)
         
         # Manual gradient update (equivalent to optimizer step)
         updated_learning_users_emb = learning_users_emb - self.config['inner_user_lr'] * grads
@@ -399,9 +414,12 @@ class AbstractSelectionStrategy(ABC):
         grads_L1 = torch.autograd.grad(L1, learning_users_emb, create_graph=False)
         grads_R = torch.autograd.grad(R, learning_users_emb, create_graph=False)
 
+        grads_L1 = self.clip_tensor_list_by_global_norm(grads_L1[0],max_norm=100.0)
+        grads_R = self.clip_tensor_list_by_global_norm(grads_R[0],max_norm=100.0)
+
         prec_L1 = torch.nn.Softplus()(self.meta_params[0,:]).repeat(self.metadata["num_user_id"], 1)
 
-        updated_users_emb = learning_users_emb - prec_L1 * (grads_L1[0]) - self.config['lambda'] * grads_R[0] 
+        updated_users_emb = learning_users_emb - prec_L1 * (grads_L1) - self.config['lambda'] * grads_R 
 
         return updated_users_emb
     
@@ -410,8 +428,10 @@ class AbstractSelectionStrategy(ABC):
         self.user_params_optimizer.zero_grad()
 
         L1, _, R = self.CDM._compute_loss(users_id=users_id, items_id=questions_id, concepts_id=categories_id, labels=labels, learning_users_emb=users_emb)
+        
         loss = L1 + self.config['lambda'] * R
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(users_emb, max_norm=100.0)
         self.user_params_optimizer.step()
         return users_emb
 
@@ -482,6 +502,7 @@ class AbstractSelectionStrategy(ABC):
 
             return q_params
 
+
     def beta_cd_inner_loop_one_loss(self,query_data, users_emb):
         """
             User parameters update (theta) on the query set
@@ -508,7 +529,7 @@ class AbstractSelectionStrategy(ABC):
                     grads_accum = [torch.zeros_like(q_params[i]) for i in range(len(q_params))]
 
                     for _ in range(self.num_sample):
-                        learning_users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                        learning_users_emb =q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(torch.clip(q_params[1], min=-1e12, max=1e5))
                         L1, _, _ = self.CDM._compute_loss(users_id=users_id, items_id=items_id, concepts_id=concepts_id, labels=labels, learning_users_emb=learning_users_emb)
 
                         kl_loss = kl_divergence_gaussians(p=p_params,q=q_params)
@@ -520,8 +541,7 @@ class AbstractSelectionStrategy(ABC):
                         grads_accum[0] = grads_accum[0] + grads[0]/ self.num_sample 
                         grads_accum[1] = grads_accum[1] + grads[1]/ self.num_sample
 
-                    grads_accum[0] = torch.nn.utils.clip_grad_norm_(grads_accum[0], max_norm=500.0)
-                    grads_accum[1] = torch.nn.utils.clip_grad_norm_(grads_accum[1], max_norm=500.0)
+                    grads_accum = self.clip_tensor_list_by_global_norm(grads_accum, max_norm=10.0)
                     
                     q_params[0] = q_params[0] - self.inner_lrs[k].abs() * grads_accum[0]
                     q_params[1] = q_params[1] - self.inner_lrs[k].abs() * grads_accum[1]
