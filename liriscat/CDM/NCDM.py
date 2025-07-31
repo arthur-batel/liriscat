@@ -173,12 +173,23 @@ class CATNCDM(NCDM) :
 
     def _compute_loss(self, users_id, items_id, concepts_id, labels, learning_users_emb):
 
-        output_1 = self.forward(users_id, items_id, concepts_id, learning_users_emb)
+        stu_emb = learning_users_emb[users_id]  # [batch_size, knowledge_dim]
+        stat_emb = torch.sigmoid(stu_emb)
+        k_difficulty = torch.sigmoid(self.model.k_difficulty(items_id))
+        e_difficulty = torch.sigmoid(self.model.e_difficulty(items_id))  # * 10
+        # prednet
+        input_x = e_difficulty * (stat_emb - k_difficulty) * self.knowledge_emb(concepts_id)
+        input_x = self.model.drop_1(torch.sigmoid(self.model.prednet_full1(input_x)))
+        input_x = self.model.drop_2(torch.sigmoid(self.model.prednet_full2(input_x)))
+        output_1 = self.model.prednet_full3(input_x)
+        output_2 = torch.sigmoid(output_1).view(-1)
+
+        binary_labels = (labels == 2).float()
 
         with torch.amp.autocast('cuda',enabled=False):
-            L1 = nn.BCELoss()(output_1.float()-1.0,labels.float()-1.0)
-        
-        unique_users =  torch.unique(users_id)
+            L1 = nn.BCELoss()(output_2.float(),binary_labels)
+
+        unique_users = torch.unique(users_id)
         unique_items = torch.unique(items_id)
 
         R = self.get_regularizer(unique_users, unique_items, learning_users_emb)
