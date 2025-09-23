@@ -1,10 +1,10 @@
-from liriscat.CDM import *
+from micat.CDM import *
 from IMPACT import model
 from IMPACT.utils import generate_eval_config
 from IMPACT.dataset import LoaderDataset as IMPACT_dataset
-from liriscat.dataset import preprocessing_utilities as pu
-from liriscat.utils import convert_config_to_EduCAT
-from liriscat.CDM.NCDM import NCDM
+from micat.dataset import preprocessing_utilities as pu
+from micat.utils import convert_config_to_EduCAT
+from micat.CDM.NCDM import NCDM
 import argparse
 
 def main(dataset_name, i_fold=None):

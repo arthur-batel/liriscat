@@ -1,15 +1,15 @@
-from liriscat.CDM import *
+from micat.CDM import *
 from IMPACT import model
 from IMPACT.utils import generate_eval_config
 from IMPACT.dataset import LoaderDataset as IMPACT_dataset
-from liriscat.dataset import preprocessing_utilities as pu
+from micat.dataset import preprocessing_utilities as pu
 import argparse
 
 def main(dataset_name, i_fold=None):
 
     # Set all the required parameters ---------------
     IMPACT_config = generate_eval_config(num_epochs=200, patience=30, save_params=True, dataset_name=dataset_name,
-                                         embs_path="../embs/" + dataset_name, params_path="../ckpt/" + dataset_name,
+                                         embs_path="../embs/", params_path="../ckpt/",
                                          learning_rate=0.008921749543575398, lambda_=6.883708386254995e-06, batch_size=2048,valid_metric='rmse', pred_metrics=["mi_acc", 'rmse'],profile_metrics=['doa'])
 
     concept_map, metadata, nb_modalities = pu.load_dataset_resources(IMPACT_config)

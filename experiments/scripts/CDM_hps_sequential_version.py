@@ -16,12 +16,12 @@ import json
 import torch
 import pandas as pd
 from importlib import reload
-from liriscat.dataset.preprocessing_utilities import *
-from liriscat import utils as utils_liriscat
+from micat.dataset.preprocessing_utilities import *
+from micat import utils as utils_micat
 from functools import partial
 
 def main(dataset_name, nb_trials, nb_jobs):
-    utils_IMPACT.setuplogger(verbose=True, log_name=f"liriscat_{dataset_name}")
+    utils_IMPACT.setuplogger(verbose=True, log_name=f"micat_{dataset_name}")
     config = utils_IMPACT.generate_hs_config(dataset_name=dataset_name, esc='error', valid_metric='rmse',
                                              pred_metrics=['rmse'])
 
@@ -34,7 +34,7 @@ def main(dataset_name, nb_trials, nb_jobs):
     )
     gc.collect()
     torch.cuda.empty_cache()
-    objective_with_args = partial(utils_liriscat.IMPACT_pre_train, config=config, train_data=train_data,
+    objective_with_args = partial(utils_micat.IMPACT_pre_train, config=config, train_data=train_data,
                                   valid_data=valid_data)
     study.optimize(objective_with_args, n_trials=1, n_jobs=1, gc_after_trial=True)
 

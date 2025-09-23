@@ -8,11 +8,11 @@ from functools import partial
 from IMPACT import utils as utils_IMPACT
 from IMPACT.model import IMPACT
 from IMPACT.dataset import LoaderDataset as IMPACT_dataset
-from liriscat.dataset.preprocessing_utilities import *
+from micat.dataset.preprocessing_utilities import *
 from optuna.exceptions import DuplicatedStudyError
-from liriscat.utils import convert_config_to_EduCAT
-from liriscat.dataset import preprocessing_utilities as pu
-from liriscat.CDM.NCDM import NCDM
+from micat.utils import convert_config_to_EduCAT
+from micat.dataset import preprocessing_utilities as pu
+from micat.CDM.NCDM import NCDM
 
 import os, torch
 print("PID", os.getpid(), "sees CUDA_VISIBLE_DEVICES =", os.environ.get("CUDA_VISIBLE_DEVICES"))

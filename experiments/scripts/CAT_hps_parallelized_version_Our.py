@@ -10,16 +10,16 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ":4096:8"
 
-import liriscat
-liriscat.utils.set_seed(0)
+import micat
+micat.utils.set_seed(0)
 
 import logging
 import gc
 import json
 import torch
-liriscat.utils.set_seed(0)
+micat.utils.set_seed(0)
 import pandas as pd
-from liriscat.dataset.preprocessing_utilities import *
+from micat.dataset.preprocessing_utilities import *
 from optuna.exceptions import DuplicatedStudyError
 
 import os, torch
@@ -34,14 +34,14 @@ def launch_test(trial, train_data, valid_data, config):
     train_data.reset_rng()
     valid_data.reset_rng()
 
-    S = liriscat.selectionStrategy.Random(train_data.metadata,**config)
+    S = micat.selectionStrategy.Random(train_data.metadata,**config)
     S.init_models(train_data, valid_data)
     logging.info(config)
     S.train(train_data, valid_data)
-    liriscat.utils.set_seed(0)
+    micat.utils.set_seed(0)
     S.reset_rng()
     d = (S.evaluate_test(valid_data, train_data, valid_data))
-    pi = liriscat.utils.pareto_index(d)
+    pi = micat.utils.pareto_index(d)
     logging.info(f"Trial {trial.number}; Best pareto_index: {pi}; Results: {d}")
 
     del S
@@ -63,7 +63,7 @@ def main(dataset_name, nb_trials):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    config = liriscat.utils.generate_eval_config(dataset_name=dataset_name,load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['meta_doa'], save_params=False, n_query=6, num_epochs=100, patience = 20, num_inner_users_epochs=3, meta_trainer='GAP', batch_size=512, lambda_=2.2656270501845414e-06, inner_user_lr=0.0016969685554352153, num_responses=12)
+    config = micat.utils.generate_eval_config(dataset_name=dataset_name,load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['meta_doa'], save_params=False, n_query=6, num_epochs=100, patience = 20, num_inner_users_epochs=3, meta_trainer='GAP', batch_size=512, lambda_=2.2656270501845414e-06, inner_user_lr=0.0007838402204978467, num_responses=12)
 
     config['device'] = device
 
@@ -87,8 +87,8 @@ def main(dataset_name, nb_trials):
         encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
                                                                 "dimension_id": int})
 
-    train_data = liriscat.dataset.CATDataset(train_df, concept_map, metadata, config,nb_modalities)
-    valid_data = liriscat.dataset.EvalDataset(valid_df, concept_map, metadata, config,nb_modalities)
+    train_data = micat.dataset.CATDataset(train_df, concept_map, metadata, config,nb_modalities)
+    valid_data = micat.dataset.EvalDataset(valid_df, concept_map, metadata, config,nb_modalities)
 
     # Shared SQLite storage accessible by all parallel tasks
     storage_name = f"sqlite:///{dataset_name}_IMPACT_GAP.db"
@@ -119,6 +119,6 @@ def main(dataset_name, nb_trials):
 if __name__ == '__main__':
 
     dataset_name = "assist0910"
-    liriscat.utils.setuplogger(verbose = True, log_name=f"CAT_hps_{dataset_name}", debug=False)
+    micat.utils.setuplogger(verbose = True, log_name=f"CAT_hps_{dataset_name}", debug=False)
     nb_trials = 25
     main(dataset_name, nb_trials)

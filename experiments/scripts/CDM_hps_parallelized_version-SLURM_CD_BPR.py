@@ -7,7 +7,7 @@ import logging
 from functools import partial
 from IMPACT import utils as utils_IMPACT
 from IMPACT.model import IMPACT
-from liriscat.dataset.preprocessing_utilities import *
+from micat.dataset.preprocessing_utilities import *
 from optuna.exceptions import DuplicatedStudyError
 
 import os, torch

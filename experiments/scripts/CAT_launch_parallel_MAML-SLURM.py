@@ -4,9 +4,9 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ":4096:8"
 
-import liriscat
-liriscat.utils.set_seed(0)
-from liriscat.dataset import preprocessing_utilities as pu
+import micat
+micat.utils.set_seed(0)
+from micat.dataset import preprocessing_utilities as pu
 
 import logging
 import gc
@@ -15,7 +15,7 @@ import torch
 import pandas as pd
 import argparse
 import warnings
-import time  # ← Ajouté pour mesurer le temps
+import time  # ← Added to measure time
 
 print("PID", os.getpid(), "sees CUDA_VISIBLE_DEVICES =", os.environ.get("CUDA_VISIBLE_DEVICES"))
 if os.environ.get("CUDA_VISIBLE_DEVICES") is not None:
@@ -29,14 +29,14 @@ def pareto_index(d):
         r.append(d_acc[i]['mi_acc'] * d_meta[i]['meta_doa'])
     return sum(r)
 
-def main(dataset_name, i_fold=None):
+def main(dataset_name, cdm, i_fold=None):
 
     gc.collect()
     torch.cuda.empty_cache()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using device: {device}")
 
-    config = liriscat.utils.generate_eval_config(
+    config = micat.utils.generate_eval_config(
         dataset_name=dataset_name,
         i_fold = i_fold,
         load_params=True,
@@ -51,14 +51,14 @@ def main(dataset_name, i_fold=None):
         device = device,
         pred_metrics = ["mi_acc","rmse","mae","mi_prec","mi_rec","mi_f_b","mi_auc","ma_prec","ma_rec","ma_f_b"],
         profile_metrics = ['meta_doa','pc-er','rm'],
-        CDM = 'impact',
+        CDM = cdm,
         meta_trainer='MAML',
         valid_metric= 'rmse',
-        n_query=25,
+        n_query=16,
         num_inner_users_epochs=3,
-        lambda_= 6.883708386254995e-06,
-        inner_user_lr=0.01,
-        meta_lr=0.05
+        lambda_=  6.883708386254995e-06,
+        inner_user_lr=0.0001,
+        meta_lr=0.005
     )
     logging.info(f'#### config : {config} ####')
 
@@ -92,19 +92,19 @@ def main(dataset_name, i_fold=None):
         dtype={'student_id': int, 'item_id': int, "correct": float, "dimension_id": int}
     )
 
-    train_data = liriscat.dataset.CATDataset(train_df, concept_map, metadata, config, nb_modalities)
-    valid_data = liriscat.dataset.EvalDataset(valid_df, concept_map, metadata, config, nb_modalities)
-    test_data  = liriscat.dataset.EvalDataset(test_df,  concept_map, metadata, config, nb_modalities)
+    train_data = micat.dataset.CATDataset(train_df, concept_map, metadata, config, nb_modalities)
+    valid_data = micat.dataset.EvalDataset(valid_df, concept_map, metadata, config, nb_modalities)
+    test_data  = micat.dataset.EvalDataset(test_df,  concept_map, metadata, config, nb_modalities)
 
-    S = liriscat.selectionStrategy.Random(train_data.metadata, **config)
+    S = micat.selectionStrategy.Random(train_data.metadata, **config)
     S.init_models(train_data, valid_data)
 
-    # — Mesure du temps d'entraînement
-    logging.info("⏳ Début de l'entraînement...")
+    # — Training time measurement
+    logging.info("⏳ Training started...")
     t_start = time.time()
     S.train(train_data, valid_data)
     t_end = time.time()
-    logging.info(f"✅ Entraînement terminé en {t_end - t_start:.2f} secondes.")
+    logging.info(f"✅ Training completed in {t_end - t_start:.2f} seconds.")
 
     S.reset_rng()
     d = S.evaluate_test(test_data, train_data, valid_data)
@@ -126,9 +126,15 @@ def parse_args():
         default=None,
         help="0-indexed fold number (if omitted runs all folds)"
     )
+    parser.add_argument(
+        '--cdm',
+        type=str,
+        default='impact',
+        help="CDM name"
+    )
     return parser.parse_args()
 
 if __name__ == '__main__':
     args = parse_args()
-    liriscat.utils.setuplogger(verbose=True, log_name="CAT_test", debug=False)
-    main(args.dataset_name, args.i_fold)
+    micat.utils.setuplogger(verbose=True, log_name="CAT_test", debug=False)
+    main(args.dataset_name, args.cdm,args.i_fold)

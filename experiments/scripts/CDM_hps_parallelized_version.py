@@ -3,7 +3,7 @@ import IMPACT.utils as utils_IMPACT
 import IMPACT.model as model_IMPACT
 import IMPACT.dataset as dataset_IMPACT
 
-from liriscat import utils as utils_liriscat, dataset as dataset_liriscat
+from micat import utils as utils_micat, dataset as dataset_micat
 from functools import partial
 
 from ipyparallel import Client
@@ -11,7 +11,7 @@ import dill
 import json
 import gc
 import torch
-from liriscat.dataset.preprocessing_utilities import *
+from micat.dataset.preprocessing_utilities import *
 cat_absolute_path = os.path.abspath('../../')
 
 rc = Client()
@@ -42,7 +42,7 @@ def main(dataset_name, nb_trials, nb_jobs):
     )
     gc.collect()
     torch.cuda.empty_cache()
-    objective_with_args = partial(utils_liriscat.objective_hps, config=config, train_data=train_data,
+    objective_with_args = partial(utils_micat.objective_hps, config=config, train_data=train_data,
                                   valid_data=valid_data)
     study.optimize(objective_with_args, n_trials=nb_trials, n_jobs=nb_jobs, gc_after_trial=True)
 
