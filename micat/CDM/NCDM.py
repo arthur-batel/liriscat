@@ -8,7 +8,7 @@ from IMPACT.model.IMPACT import resp_to_mod
 import torch.utils.data as data
 
 from IMPACT.dataset import *
-from IMPACT.model import IMPACT, IMPACTModel_low_mem, IMPACTModel, custom_loss_low_mem, custom_loss
+from IMPACT.model import IMPACT
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 

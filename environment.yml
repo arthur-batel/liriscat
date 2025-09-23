@@ -6,7 +6,6 @@ channels:
   - nvidia
 dependencies:
   - _libgcc_mutex=0.1
-  - _openmp_mutex=5.1
   - asttokens=3.0.0
   - blas=2.132
   - blas-devel=3.9.0
@@ -110,7 +109,6 @@ dependencies:
   - pyparsing=3.2.3
   - pysocks=1.7.1
   - python=3.11.13
-  - python-dateutil=2.9.0post0
   - python-tzdata=2025.2
   - python_abi=3.11
   - pytz=2025.2
@@ -146,7 +144,7 @@ dependencies:
   - pip:
       - astor==0.8.1
       - cloudpickle==3.1.1
-      - critdd==0.0.5.dev0
+      - critdd
       - dill==0.4.0
       - educdm==1.0.1
       - filelock==3.11.0

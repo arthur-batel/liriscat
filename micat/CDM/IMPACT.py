@@ -10,7 +10,7 @@ import torch.utils.data as data
 from IMPACT.model.abstract_model import AbstractModel
 
 from IMPACT.dataset import *
-from IMPACT.model import IMPACT, IMPACTModel_low_mem, IMPACTModel, custom_loss_low_mem, custom_loss
+from IMPACT.model import IMPACT
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -183,7 +183,7 @@ def custom_l1(learning_users_emb: torch.Tensor,
 
     b_diag = b.abs()
 
-    u_mask = (b_diag > 0.0) & (R_t >= 1.0) & (b_diag <= (2/nb_items_modalities).unsqueeze(1))   # b_diag > 0 : not exactly similar responses for which we cannot say anything; R_t >= 1.0 : comparison with not null responses only
+    u_mask = (b_diag > 0.0) & (R_t >= 1.0) #& (b_diag <= (2/nb_items_modalities).unsqueeze(1))   # b_diag > 0 : not exactly similar responses for which we cannot say anything; R_t >= 1.0 : comparison with not null responses only
 
     indices = torch.nonzero(u_mask)
     u_base_idx = indices[:, 0]
