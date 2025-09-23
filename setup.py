@@ -18,13 +18,10 @@ install_requires = [] if SKIP_DEPENDENCIES else [
 setup(
     name='micat',
     version='1.0',
-    author='Arthur BATEL',
-    author_email='arthur.batel@insa-lyon.fr',
     packages=find_packages(),
     description="""Bi-Objective Meta-Learning for Interpretable Computerized Adaptive Testing""",
     long_description_content_type="text/markdown",
     long_description=open('README.md').read(),
-    url='https://github.com/arthur-batel/micat.git',
     install_requires=install_requires,# And any other dependencies foo needs
     entry_points={
     },
