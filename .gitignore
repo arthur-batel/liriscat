@@ -1,9 +1,9 @@
 .idea
 __pycache__/
 .vscode/
-liriscat/dataset/__pycache__/
-liriscat/selectionStrategy/__pycache__/
-liriscat/utils/__pycache__/
+micat/dataset/__pycache__/
+micat/selectionStrategy/__pycache__/
+micat/utils/__pycache__/
 experiment/__pycache__/
 experiment/datasets/__pycache__/
 experiment/datasets/data_utils/__pycache__/
@@ -15,8 +15,8 @@ experiments/tensorboard/
 build/
 dist/
 y/
-liriscat.egg-info/
+micat.egg-info/
 *.ipynb_checkpoints
 experiments/notebook_example/tmp5r7m6idd
 experiments/notebook_example/tmp55966wlr
-experiments/notebook_example/torchinductor_arthur
+

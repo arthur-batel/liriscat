@@ -1,15 +1,16 @@
 .PHONY: install clean check_conda check_env_file
 
 install: check_conda check_env_file
-	@if conda env list | grep -q 'liriscat-env'; then \
-	    echo "Updating existing conda environment 'liriscat-env'..."; \
-	    conda env update -f environment.yaml -n liriscat-env; \
+	@if conda env list | grep -q 'micat-env'; then \
+	    echo "Updating existing conda environment 'micat-env'..."; \
+	    conda env update -f environment.yml -n micat-env; \
 	else \
-	    echo "Creating new conda environment 'liriscat-env'..."; \
-	    conda env create -f environment.yaml -n liriscat-env; \
+	    echo "Creating new conda environment 'micat-env'..."; \
+	    conda env create -f environment.yml -n micat-env; \
 	fi
 	@echo "Installing package in editable mode..."
 	pip install -e .
+	pip install -e ../IMPACT
 
 clean:
 	@echo "Cleaning data and results directories..."
@@ -24,9 +25,9 @@ check_conda:
 	fi
 
 check_env_file:
-	@if [ -f environment.yaml ]; then \
-		echo "Found environment.yaml."; \
+	@if [ -f environment.yml ]; then \
+		echo "Found environment.yml."; \
 	else \
-		echo "ERROR: environment.yaml file not found!"; \
+		echo "ERROR: environment.yml file not found!"; \
 		exit 1; \
 	fi
