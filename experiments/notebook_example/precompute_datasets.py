@@ -3,13 +3,13 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ":4096:8"
 
-import liriscat
-liriscat.utils.set_seed(0)
+import micat
+micat.utils.set_seed(0)
 
 import logging
 import json
 import torch
-liriscat.utils.set_seed(0)
+micat.utils.set_seed(0)
 import pandas as pd
 
 import warnings
@@ -18,12 +18,12 @@ import pickle
 os.chdir("./experiments/notebook_example/")
 print(os.getcwd())
 
-liriscat.utils.setuplogger(verbose = True, log_name="liriscat")
+micat.utils.setuplogger(verbose = True, log_name="micat")
 
 import warnings
 
-config = liriscat.utils.generate_eval_config(load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['doa'], save_params=False, n_query=4, num_epochs=1, batch_size=512)
-liriscat.utils.set_seed(config["seed"])
+config = micat.utils.generate_eval_config(load_params=True, esc = 'error', valid_metric= 'mi_acc', pred_metrics = ["mi_acc"], profile_metrics = ['doa'], save_params=False, n_query=4, num_epochs=1, batch_size=512)
+micat.utils.set_seed(config["seed"])
 
 config["dataset_name"] = "math2"
 logging.info(config["dataset_name"])
@@ -66,9 +66,9 @@ for i_fold in range(5) :
         encoding='utf-8', dtype={'student_id': int, 'item_id': int, "correct": float,
                                                                  "dimension_id": int})
 
-    train_data = liriscat.dataset.CATDataset(train_df, concept_map, metadata, config, nb_modalities)
-    valid_data = liriscat.dataset.EvalDataset(valid_df, concept_map, metadata, config, nb_modalities)
-    test_data  = liriscat.dataset.EvalDataset(test_df,  concept_map, metadata, config, nb_modalities)
+    train_data = micat.dataset.CATDataset(train_df, concept_map, metadata, config, nb_modalities)
+    valid_data = micat.dataset.EvalDataset(valid_df, concept_map, metadata, config, nb_modalities)
+    test_data  = micat.dataset.EvalDataset(test_df,  concept_map, metadata, config, nb_modalities)
 
     # pickle each split
     for name, data in (("train", train_data), ("valid", valid_data), ("test", test_data)):
