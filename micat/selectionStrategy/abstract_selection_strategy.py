@@ -97,6 +97,8 @@ class AbstractSelectionStrategy(ABC):
                 self.CDM = CDM.CATIRT(**self.config)
             case 'ncdm':
                 self.CDM = CDM.CATNCDM(**self.config)
+            case _:
+                raise ValueError(f"Unknown cdm: {config['CDM']}")
 
         logging.debug(f'----- Meta trainer init : {self.config["meta_trainer"]}')
         match self.config['meta_trainer']:
