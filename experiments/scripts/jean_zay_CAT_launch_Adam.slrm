@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=CAT_launch_algebra_IMPACT_Adam
+#SBATCH --job-name=CAT_launch_assist0910_IMPACT_Adam
 #SBATCH --output=logs/%x_%A_%a.out  # %x=job-name, %A=array master ID, %a=task ID
 #SBATCH --error=logs/%x_%A_%a.err
 ##SBATCH --constraint=v100-16g
@@ -19,4 +19,4 @@ module load pytorch-gpu/py3/2.7.0
 mkdir -p "${SLURM_SUBMIT_DIR}/logs"
 
 # SLURM_ARRAY_TASK_ID is 0–4
-srun python CAT_launch_parallel_Adam-SLURM.py algebra --i_fold $SLURM_ARRAY_TASK_ID
+srun python CAT_launch_parallel_Adam-SLURM.py assist0910 --cdm impact --i_fold $SLURM_ARRAY_TASK_ID

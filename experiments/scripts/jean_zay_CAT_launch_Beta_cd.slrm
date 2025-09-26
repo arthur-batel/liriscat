@@ -18,4 +18,4 @@ module load pytorch-gpu/py3/2.7.0
 mkdir -p "${SLURM_SUBMIT_DIR}/logs"
 
 # SLURM_ARRAY_TASK_ID is 0–4
-srun python CAT_launch_parallel_Beta_cd-SLURM.py algebra --i_fold $SLURM_ARRAY_TASK_ID
+srun python CAT_launch_parallel_Beta_cd-SLURM.py algebra --cdm impact --i_fold $SLURM_ARRAY_TASK_ID
