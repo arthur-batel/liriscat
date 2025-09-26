@@ -149,7 +149,7 @@ def generate_outputs_for_group(dataset: str, cdm: str, meta_trainer: str,
     acc, itp = aggregate_results(files)
     summary_data = compute_mean_and_std(acc, itp)
     base = f"CAT_launch_{dataset}_{cdm}_{meta_trainer}_{experiment_id}"
-    csv_filename = f"{base}_metrics_summary.csv"
+    csv_filename = f"logs/{base}_metrics_summary.csv"
     with open(csv_filename, 'w', newline='') as csvfile:
         fieldnames = ['step', 'metric', 'mean', 'std', 'n', 'type']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -157,7 +157,7 @@ def generate_outputs_for_group(dataset: str, cdm: str, meta_trainer: str,
         for row in summary_data:
             writer.writerow(row)
     print(f"Successfully wrote CSV file: {csv_filename}")
-    json_summary_filename = f"{base}_metrics_summary.json"
+    json_summary_filename = f"logs/{base}_metrics_summary.json"
     with open(json_summary_filename, 'w') as jf:
         summary_dict = {idx: row for idx, row in enumerate(summary_data)}
         json.dump(summary_dict, jf, indent=4)
@@ -169,7 +169,7 @@ def generate_outputs_for_group(dataset: str, cdm: str, meta_trainer: str,
             0: acc.get(fold_num, {}),
             1: itp.get(fold_num, {})
         }
-    all_results_filename = f"{base}_all_results.json"
+    all_results_filename = f"logs/{base}_all_results.json"
     with open(all_results_filename, 'w') as jf:
         json.dump(all_results, jf, indent=4)
     print(f"Successfully wrote JSON file: {all_results_filename}")
