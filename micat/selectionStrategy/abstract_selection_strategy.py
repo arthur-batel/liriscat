@@ -1201,6 +1201,134 @@ class AbstractSelectionStrategy(ABC):
         """
         self._rng = torch.Generator(device=self.config['device']).manual_seed(self.config['seed'])
 
+    @evaluation_state
+    def evaluate_cdm_base(self, test_dataset: dataset.EvalDataset,train_dataset: dataset.EvalDataset,valid_dataset: dataset.EvalDataset):
+        """CATDataset
+        Evaluate the CDM base performance on the given data using the given metrics.
+        """
+        logging.debug("-- Evaluate CDM base performance --")
+
+        # Device cleanup
+        torch.cuda.empty_cache()
+        logging.info('train on {}'.format(self.config['device']))
+
+        # Users embeddings initialization
+        mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean.squeeze(0), covariance_matrix=self.CDM.model.cov_matrix)
+        learning_users_emb = nn.Parameter(mvn.sample((self.CDM.model.users_emb.weight.shape[0],)).requires_grad_(True))
+
+        # Initialize testing config
+        match self.config['meta_trainer']:
+            case 'Adam':
+                self.user_params_optimizer = torch.optim.Adam(
+                    [learning_users_emb],
+                    lr=self.config['inner_user_lr']
+                )
+            case _:
+                raise ValueError(f"Unknown meta trainer: {self.config['meta_trainer']}")
+
+
+        # Updating CDM to test dataset
+        self.CDM.init_test(test_dataset)
+
+        # Dataloaders preperation
+        test_dataset.split_query_meta(self.config['seed'])
+        test_query_env = QueryEnv(test_dataset, self.config['valid_batch_size'])
+        test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
+                                      shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
+
+        # Saving metric structures
+        emb_tensor = torch.zeros(size = (self.config['n_query'],test_dataset.n_users, test_dataset.n_categories), device=self.device)
+
+        # Test
+        for batch in test_loader:
+
+            test_query_env.load_batch(batch)
+
+            # Prepare the meta set
+            meta_data = test_query_env.generate_meta()
+            nb_modalities = test_dataset.nb_modalities[meta_data['questions_id']]
+
+            for i_query in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
+
+                # Select the action (question to submit)
+                options = test_query_env.get_query_options(i_query)
+                actions = self.select_action(options)
+                test_query_env.update(actions, i_query)
+
+                if i_query==self.config['n_query']-1:
+
+                    learning_users_emb = self.inner_CDM_basis_loop(test_query_env.feed_sub(),learning_users_emb,meta_data)
+    
+                    with torch.no_grad() :
+                        preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'],concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
+
+
+        # Compute metrics in one pass using a dictionary comprehension
+        results_pred = {metric: self.pred_metric_functions[metric](torch.tensor(preds), torch.tensor(meta_data['labels']), torch.tensor(nb_modalities)).cpu().item()
+                   for metric in self.pred_metrics}
+
+        results_profiles = {
+                metric: self.profile_metric_functions[metric](learning_users_emb, test_dataset, train_dataset, valid_dataset)
+                for metric in self.profile_metrics
+            }
+
+        return results_pred, results_profiles
+
+    def inner_CDM_basis_loop(self,query_data,users_emb,meta_data):
+            """
+                User parameters update (theta) on the query set
+            """
+            logging.debug("- Update users ")
+
+            best_loss = float('inf')
+            best_epoch = -1
+            best_users_emb = None 
+            
+    
+            with torch.enable_grad():
+    
+                sub_data = dataset.SubmittedDataset(query_data)
+                sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
+    
+                for epoch in tqdm(range(100), total=100) :
+                    
+                    for  batch in sub_dataloader:
+                        users_id, items_id, labels, concepts_id, _ = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
+        
+                        self.CDM.model.train()
+                        u_0 = users_emb.clone().detach()
+                        users_emb = self.inner_step(users_id, items_id, labels, concepts_id, users_emb)
+                        self.CDM.model.eval()
+
+                    # Early stopping
+                    # Compute loss : 
+                    if self.config['CDM'] == 'impact' :
+                
+                        L1, L3, _ = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'], learning_users_emb=users_emb)
+                        losses = torch.stack([L1, L3])  # Shape: (4,)
+                        
+                        meta_loss = torch.dot(self.weights, losses) 
+
+                    else : 
+                        L1, _, _ = self.CDM._compute_loss(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], labels=meta_data['labels'], learning_users_emb=users_emb)
+                        
+                        meta_loss = L1
+
+                            
+
+                    print("Meta_loss",meta_loss)
+
+                    if meta_loss < best_loss:
+                        best_loss = meta_loss
+                        best_epoch = epoch
+                        best_users_emb = users_emb.detach().clone()
+
+                    if epoch-best_epoch > 10 : 
+                        break
+                        
+                print("---------- best_epoch :",best_epoch,";   ")
+                return best_users_emb
+                
 class DummyOptimizer:
     def zero_grad(self): pass
     def step(self):      pass
