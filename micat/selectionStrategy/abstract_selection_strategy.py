@@ -291,9 +291,11 @@ class AbstractSelectionStrategy(ABC):
         w_L3_norm = F.softplus(self.cross_cond[1,0])
 
         P1 = P_L1+w_L1_norm*F.sigmoid(grads_L3[0].norm())
-        P3 = P_L3+w_L3_norm*F.sigmoid(grads_L1[0].norm()+F.softplus(self.meta_lambda)*grads_R[0].norm()) # 
+        P3 = P_L3+w_L3_norm*F.sigmoid(grads_L1[0].norm())
 
-        updated_users_emb = learning_users_emb -   P1 *(grads_L1[0] +F.softplus(self.meta_lambda)*grads_R[0]) - P3 *grads_L3[0] #  #
+        self.weights = self.L_W.compute_weights(torch.stack([L1, L3]))
+
+        updated_users_emb = learning_users_emb -   P1 *(grads_L1[0] ) - P3 *grads_L3[0] 
 
         return updated_users_emb
     
@@ -1111,6 +1113,7 @@ class AbstractSelectionStrategy(ABC):
                         
                         meta_loss = L1
                         mean_meta_loss += meta_loss / len(batch)
+            
                     
             if self.config['meta_trainer'] != 'Adam':
                 self.update_meta_params(mean_meta_loss)
@@ -1120,7 +1123,7 @@ class AbstractSelectionStrategy(ABC):
                 with torch.no_grad():
                     learning_users_emb.copy_(orig_emb)
                 learning_users_emb.requires_grad_(True)
-
+            
             # Early stopping
             if (ep + 1) % eval_freq == 0:
                 with torch.no_grad(), torch.amp.autocast('cuda'):
@@ -1164,6 +1167,10 @@ class AbstractSelectionStrategy(ABC):
 
                     if ep - self.best_epoch >= patience or torch.max(torch.tensor([param_group['lr'] for param_group in self.meta_optimizer.param_groups])) < 1e-4:
                         break
+                        
+            self.weights = torch.tensor([1.0, 1.0], device=self.config['device'])
+            self.L_W.reset()
+                
 
         self.model.load_state_dict(self.best_model_params['state_dict'])
 
