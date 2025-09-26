@@ -83,11 +83,18 @@ class CoVWeightingLoss(nn.Module):
 
         return self.weights
 
+    @torch.jit.export
     def reset(self):
         """
         Reset all statistics to their initial state.
         """
-        self.mean_L.zero_()
-        self.t = 0
-        self.mean_l.zero_()
-        self.M2.zero_()
+        with torch.no_grad():
+            # break any accidental graph aliasing
+            self.mean_L = self.mean_L.detach()
+            self.mean_l = self.mean_l.detach()
+            self.M2     = self.M2.detach()
+    
+            self.mean_L.zero_()
+            self.mean_l.zero_()
+            self.M2.zero_()
+            self.t = 0
