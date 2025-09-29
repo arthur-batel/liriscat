@@ -1,9 +1,9 @@
 IMPACT ---------------------------------------------------------------------------------------------------------------------------
 CAT;dataset; valid_metric; best hyperparams rounded
 
-Naive CAT + Adam;algebra; {'inner_user_lr': 0.01}
-Naive CAT + Adam;math2;{'inner_user_lr': 0.05}
-Naive CAT + Adam;assist0910;{'inner_user_lr': 0.05}
+Naive CAT + Adam;algebra; {'inner_user_lr': 0.01, 'num_inner_users_epochs': 7}
+Naive CAT + Adam;math2;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 10}
+Naive CAT + Adam;assist0910;{'inner_user_lr': 0.05, 'num_inner_users_epochs': 9}
 
 Beta_cd; algebra; meta_lr = 0.001, kl_weight = 0.001
 Beta-cd; math2; meta_lr = 0.05, kl_weight = 0.0001
@@ -23,9 +23,9 @@ MICAT;Assist0910; meta_lr = 2.0,learning_users_emb_lr = 0.001
 
 NCDM ---------------------------------------------------------------------------------------------------------------------------
 
-Naive CAT + Adam;algebra;inner_user_lr = 1e-5
-Naive CAT + Adam;math2;inner_user_lr = 0.05
-Naive CAT + Adam;assist0910;inner_user_lr = 1e-5
+Naive CAT + Adam;algebra;inner_user_lr = 1e-5,num_inner_users_epochs = 3.0
+Naive CAT + Adam;math2;inner_user_lr = 0.05, num_inner_users_epochs = 8.0
+Naive CAT + Adam;assist0910;inner_user_lr = 1e-5,num_inner_users_epochs = 8.0
 
 ApproxGAP; algebra; meta_lr = 0.5
 ApproxGAP; math2; meta_lr = 0.01
@@ -42,4 +42,3 @@ MAML; assist0910; meta_lr = 0.05, inner_user_lr = 0.01
 MICAT; Algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0001
 MICAT; math2; meta_lr = 2.0,learning_users_emb_lr = 0.0001
 MICAT;Assist0910; meta_lr = 0.001,learning_users_emb_lr = 0.001
-
