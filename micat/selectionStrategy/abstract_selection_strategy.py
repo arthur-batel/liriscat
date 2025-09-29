@@ -1290,7 +1290,7 @@ class AbstractSelectionStrategy(ABC):
                 sub_data = dataset.SubmittedDataset(query_data)
                 sub_dataloader = DataLoader(sub_data, batch_size=2048, shuffle=True, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
     
-                for epoch in tqdm(range(100), total=100) :
+                for epoch in tqdm(range(1000), total=1000) :
                     
                     for  batch in sub_dataloader:
                         users_id, items_id, labels, concepts_id, _ = batch["user_ids"], batch["question_ids"], batch["labels"], batch["category_ids"], batch["nb_modalities"]
