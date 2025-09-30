@@ -1,0 +1,105 @@
+\begin{table*}[t]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{0.5pt}
+\renewcommand{\arraystretch}{1.0}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{%
+  ll
+  @{\quad}
+  c@{\hskip 4pt}c
+  @{\quad\quad}
+  c@{\hskip 4pt}c
+  @{\quad\quad}
+  c@{\hskip 4pt}c
+  @{\quad\quad}
+  c@{\hskip 4pt}c
+  @{\quad\quad}
+  c@{\hskip 4pt}c
+}
+\toprule
+Dataset & \makecell{Number of\\ submitted\\ questions ($t$)}
+  & \multicolumn{2}{c}{\naive}
+  & \multicolumn{2}{c}{\maml}
+  & \multicolumn{2}{c}{\approxgap}
+  & \multicolumn{2}{c}{\betacd}
+  & \multicolumn{2}{c}{\method} \\
+\cmidrule(lr){3-4}
+\cmidrule(lr){5-6}
+\cmidrule(lr){7-8}
+\cmidrule(lr){9-10}
+\cmidrule(lr){11-12}
+ &  & NCDM & CD-BPR 
+  & NCDM & CD-BPR 
+  & NCDM & CD-BPR 
+  & NCDM & CD-BPR 
+  & NCDM & CD-BPR \\
+\midrule
+
+\algebra{} & 0 & \textemdash & 0.769 $\pm$ 0.007 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.007 & \textemdash & 0.686 $\pm$ 0.021 & \textemdash & \textbf{0.776 $\pm$ 0.009} \\
+        & 1 & \textemdash & 0.770 $\pm$ 0.009 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.006 & \textemdash & 0.684 $\pm$ 0.024 & \textemdash & \textbf{0.775 $\pm$ 0.009} \\
+        & 2 & \textemdash & 0.765 $\pm$ 0.009 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.007 & \textemdash & 0.693 $\pm$ 0.026 & \textemdash & \textbf{0.775 $\pm$ 0.010} \\
+        & 3 & \textemdash & 0.764 $\pm$ 0.007 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.007 & \textemdash & 0.665 $\pm$ 0.039 & \textemdash & \textbf{0.775 $\pm$ 0.012} \\
+        & 4 & \textemdash & 0.764 $\pm$ 0.006 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.767 $\pm$ 0.007 & \textemdash & 0.658 $\pm$ 0.030 & \textemdash & \textbf{0.776 $\pm$ 0.010} \\
+        & 5 & \textemdash & 0.764 $\pm$ 0.006 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.767 $\pm$ 0.007 & \textemdash & 0.661 $\pm$ 0.035 & \textemdash & \textbf{0.776 $\pm$ 0.010} \\
+        & 6 & \textemdash & 0.765 $\pm$ 0.005 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.767 $\pm$ 0.007 & \textemdash & 0.661 $\pm$ 0.028 & \textemdash & \textbf{0.776 $\pm$ 0.011} \\
+        & 7 & \textemdash & 0.766 $\pm$ 0.005 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.007 & \textemdash & 0.660 $\pm$ 0.035 & \textemdash & \textbf{0.776 $\pm$ 0.011} \\
+        & 8 & \textemdash & 0.767 $\pm$ 0.002 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.770 $\pm$ 0.008 & \textemdash & 0.663 $\pm$ 0.039 & \textemdash & \textbf{0.777 $\pm$ 0.012} \\
+        & 9 & \textemdash & 0.768 $\pm$ 0.002 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.769 $\pm$ 0.009 & \textemdash & 0.669 $\pm$ 0.036 & \textemdash & \textbf{0.777 $\pm$ 0.012} \\
+        & 10 & \textemdash & 0.771 $\pm$ 0.004 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.767 $\pm$ 0.010 & \textemdash & 0.673 $\pm$ 0.033 & \textemdash & \textbf{0.776 $\pm$ 0.012} \\
+        & 11 & \textemdash & 0.771 $\pm$ 0.004 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.011 & \textemdash & 0.666 $\pm$ 0.037 & \textemdash & \textbf{0.776 $\pm$ 0.010} \\
+        & 12 & \textemdash & 0.769 $\pm$ 0.003 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.768 $\pm$ 0.012 & \textemdash & 0.673 $\pm$ 0.030 & \textemdash & \textbf{0.775 $\pm$ 0.009} \\
+        & 13 & \textemdash & 0.768 $\pm$ 0.006 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.769 $\pm$ 0.011 & \textemdash & 0.673 $\pm$ 0.029 & \textemdash & \textbf{0.776 $\pm$ 0.009} \\
+        & 14 & \textemdash & 0.767 $\pm$ 0.005 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.770 $\pm$ 0.011 & \textemdash & 0.674 $\pm$ 0.031 & \textemdash & \textbf{0.776 $\pm$ 0.007} \\
+        & 15 & \textemdash & 0.765 $\pm$ 0.007 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.772 $\pm$ 0.009 & \textemdash & 0.671 $\pm$ 0.034 & \textemdash & \textbf{0.777 $\pm$ 0.007} \\
+        & 16 & \textemdash & 0.766 $\pm$ 0.008 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.772 $\pm$ 0.010 & \textemdash & 0.676 $\pm$ 0.034 & \textemdash & \textbf{0.778 $\pm$ 0.005} \\
+        & 17 & \textemdash & 0.763 $\pm$ 0.007 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.772 $\pm$ 0.011 & \textemdash & 0.670 $\pm$ 0.036 & \textemdash & \textbf{0.777 $\pm$ 0.004} \\
+        & 18 & \textemdash & 0.763 $\pm$ 0.005 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.773 $\pm$ 0.009 & \textemdash & 0.679 $\pm$ 0.032 & \textemdash & \textbf{0.778 $\pm$ 0.005} \\
+        & 19 & \textemdash & 0.760 $\pm$ 0.007 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.773 $\pm$ 0.009 & \textemdash & 0.674 $\pm$ 0.030 & \textemdash & \textbf{0.779 $\pm$ 0.006} \\
+        & 20 & \textemdash & 0.761 $\pm$ 0.004 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.774 $\pm$ 0.009 & \textemdash & 0.674 $\pm$ 0.032 & \textemdash & \textbf{0.779 $\pm$ 0.005} \\
+        & 21 & \textemdash & 0.764 $\pm$ 0.005 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.775 $\pm$ 0.009 & \textemdash & 0.676 $\pm$ 0.030 & \textemdash & \textbf{0.781 $\pm$ 0.006} \\
+        & 22 & \textemdash & 0.763 $\pm$ 0.003 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.776 $\pm$ 0.009 & \textemdash & 0.678 $\pm$ 0.031 & \textemdash & \textbf{0.782 $\pm$ 0.006} \\
+        & 23 & \textemdash & 0.761 $\pm$ 0.004 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.776 $\pm$ 0.009 & \textemdash & 0.678 $\pm$ 0.040 & \textemdash & \textbf{0.782 $\pm$ 0.006} \\
+        & 24 & \textemdash & 0.762 $\pm$ 0.004 & \textemdash & 0.769 $\pm$ 0.012 & \textemdash & 0.776 $\pm$ 0.009 & \textemdash & 0.674 $\pm$ 0.033 & \textemdash & \textbf{0.781 $\pm$ 0.005} \\
+\midrule
+Math2 & 0 & 0.554 $\pm$ 0.005 & 0.608 $\pm$ 0.009 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.547 $\pm$ 0.008 & 0.653 $\pm$ 0.013 & 0.612 $\pm$ 0.010 & 0.675 $\pm$ 0.008 & 0.555 $\pm$ 0.015 & \textbf{0.685 $\pm$ 0.010} \\
+        & 1 & 0.559 $\pm$ 0.004 & 0.599 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.654 $\pm$ 0.012 & 0.612 $\pm$ 0.010 & 0.656 $\pm$ 0.016 & 0.561 $\pm$ 0.012 & \textbf{0.688 $\pm$ 0.011} \\
+        & 2 & 0.566 $\pm$ 0.004 & 0.612 $\pm$ 0.007 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.656 $\pm$ 0.012 & 0.611 $\pm$ 0.010 & 0.663 $\pm$ 0.012 & 0.568 $\pm$ 0.009 & \textbf{0.690 $\pm$ 0.010} \\
+        & 3 & 0.569 $\pm$ 0.003 & 0.624 $\pm$ 0.009 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.661 $\pm$ 0.012 & 0.612 $\pm$ 0.009 & 0.665 $\pm$ 0.014 & 0.575 $\pm$ 0.008 & \textbf{0.693 $\pm$ 0.009} \\
+        & 4 & 0.574 $\pm$ 0.005 & 0.630 $\pm$ 0.007 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.665 $\pm$ 0.013 & 0.612 $\pm$ 0.008 & 0.669 $\pm$ 0.010 & 0.581 $\pm$ 0.004 & \textbf{0.699 $\pm$ 0.008} \\
+        & 5 & 0.574 $\pm$ 0.003 & 0.641 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.667 $\pm$ 0.013 & 0.612 $\pm$ 0.010 & 0.668 $\pm$ 0.013 & 0.587 $\pm$ 0.004 & \textbf{0.701 $\pm$ 0.006} \\
+        & 6 & 0.580 $\pm$ 0.003 & 0.647 $\pm$ 0.003 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.548 $\pm$ 0.008 & 0.673 $\pm$ 0.014 & 0.612 $\pm$ 0.010 & 0.671 $\pm$ 0.008 & 0.592 $\pm$ 0.005 & \textbf{0.701 $\pm$ 0.006} \\
+        & 7 & 0.583 $\pm$ 0.005 & 0.653 $\pm$ 0.002 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.549 $\pm$ 0.008 & 0.676 $\pm$ 0.014 & 0.612 $\pm$ 0.010 & 0.670 $\pm$ 0.009 & 0.596 $\pm$ 0.004 & \textbf{0.703 $\pm$ 0.007} \\
+        & 8 & 0.584 $\pm$ 0.004 & 0.659 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.549 $\pm$ 0.008 & 0.681 $\pm$ 0.015 & 0.611 $\pm$ 0.009 & 0.674 $\pm$ 0.012 & 0.599 $\pm$ 0.005 & \textbf{0.705 $\pm$ 0.005} \\
+        & 9 & 0.584 $\pm$ 0.004 & 0.658 $\pm$ 0.005 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.549 $\pm$ 0.008 & 0.682 $\pm$ 0.014 & 0.611 $\pm$ 0.009 & 0.675 $\pm$ 0.008 & 0.601 $\pm$ 0.006 & \textbf{0.706 $\pm$ 0.008} \\
+        & 10 & 0.587 $\pm$ 0.004 & 0.664 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.549 $\pm$ 0.008 & 0.684 $\pm$ 0.015 & 0.611 $\pm$ 0.009 & 0.676 $\pm$ 0.009 & 0.603 $\pm$ 0.006 & \textbf{0.705 $\pm$ 0.010} \\
+        & 11 & 0.586 $\pm$ 0.005 & 0.666 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.550 $\pm$ 0.008 & 0.686 $\pm$ 0.015 & 0.611 $\pm$ 0.010 & 0.673 $\pm$ 0.011 & 0.605 $\pm$ 0.007 & \textbf{0.704 $\pm$ 0.008} \\
+        & 12 & 0.589 $\pm$ 0.004 & 0.666 $\pm$ 0.005 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.550 $\pm$ 0.008 & 0.685 $\pm$ 0.013 & 0.611 $\pm$ 0.009 & 0.674 $\pm$ 0.008 & 0.606 $\pm$ 0.007 & \textbf{0.701 $\pm$ 0.007} \\
+        & 13 & 0.589 $\pm$ 0.004 & 0.668 $\pm$ 0.005 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.551 $\pm$ 0.008 & 0.686 $\pm$ 0.011 & 0.611 $\pm$ 0.010 & 0.676 $\pm$ 0.011 & 0.609 $\pm$ 0.008 & \textbf{0.701 $\pm$ 0.006} \\
+        & 14 & 0.592 $\pm$ 0.004 & 0.671 $\pm$ 0.004 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.552 $\pm$ 0.008 & 0.685 $\pm$ 0.011 & 0.611 $\pm$ 0.010 & 0.679 $\pm$ 0.009 & 0.611 $\pm$ 0.008 & \textbf{0.698 $\pm$ 0.005} \\
+        & 15 & 0.596 $\pm$ 0.005 & 0.674 $\pm$ 0.005 & 0.610 $\pm$ 0.012 & 0.644 $\pm$ 0.030 & 0.553 $\pm$ 0.008 & 0.686 $\pm$ 0.011 & 0.612 $\pm$ 0.010 & 0.678 $\pm$ 0.013 & 0.612 $\pm$ 0.009 & \textbf{0.696 $\pm$ 0.006} \\
+\midrule
+\assist{} & 0 & 0.573 $\pm$ 0.009 & 0.639 $\pm$ 0.017 & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.571 $\pm$ 0.006 & 0.623 $\pm$ 0.007 & 0.568 $\pm$ 0.032 & \textbf{0.642 $\pm$ 0.009} & 0.593 $\pm$ 0.012 & 0.638 $\pm$ 0.011 \\
+        & 1 & 0.573 $\pm$ 0.009 & \textbf{0.648 $\pm$ 0.012} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.571 $\pm$ 0.007 & 0.624 $\pm$ 0.007 & 0.566 $\pm$ 0.032 & 0.639 $\pm$ 0.011 & 0.593 $\pm$ 0.012 & 0.642 $\pm$ 0.011 \\
+        & 2 & 0.573 $\pm$ 0.009 & \textbf{0.657 $\pm$ 0.015} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.571 $\pm$ 0.007 & 0.624 $\pm$ 0.007 & 0.566 $\pm$ 0.033 & 0.640 $\pm$ 0.009 & 0.594 $\pm$ 0.012 & 0.644 $\pm$ 0.009 \\
+        & 3 & 0.573 $\pm$ 0.009 & \textbf{0.666 $\pm$ 0.011} & 0.541 $\pm$ 0.028 & 0.608 $\pm$ 0.009 & 0.571 $\pm$ 0.007 & 0.623 $\pm$ 0.008 & 0.566 $\pm$ 0.033 & 0.631 $\pm$ 0.017 & 0.594 $\pm$ 0.012 & 0.645 $\pm$ 0.010 \\
+        & 4 & 0.573 $\pm$ 0.009 & \textbf{0.673 $\pm$ 0.009} & 0.541 $\pm$ 0.028 & 0.608 $\pm$ 0.009 & 0.572 $\pm$ 0.007 & 0.624 $\pm$ 0.009 & 0.565 $\pm$ 0.032 & 0.628 $\pm$ 0.030 & 0.594 $\pm$ 0.012 & 0.650 $\pm$ 0.008 \\
+        & 5 & 0.573 $\pm$ 0.009 & \textbf{0.674 $\pm$ 0.009} & 0.541 $\pm$ 0.028 & 0.608 $\pm$ 0.009 & 0.572 $\pm$ 0.007 & 0.624 $\pm$ 0.008 & 0.567 $\pm$ 0.032 & 0.624 $\pm$ 0.021 & 0.594 $\pm$ 0.012 & 0.652 $\pm$ 0.009 \\
+        & 6 & 0.573 $\pm$ 0.009 & \textbf{0.676 $\pm$ 0.005} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.573 $\pm$ 0.007 & 0.625 $\pm$ 0.008 & 0.568 $\pm$ 0.032 & 0.625 $\pm$ 0.018 & 0.595 $\pm$ 0.012 & 0.654 $\pm$ 0.009 \\
+        & 7 & 0.573 $\pm$ 0.009 & \textbf{0.674 $\pm$ 0.005} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.573 $\pm$ 0.007 & 0.626 $\pm$ 0.009 & 0.566 $\pm$ 0.031 & 0.627 $\pm$ 0.020 & 0.595 $\pm$ 0.012 & 0.657 $\pm$ 0.011 \\
+        & 8 & 0.573 $\pm$ 0.009 & \textbf{0.675 $\pm$ 0.005} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.573 $\pm$ 0.007 & 0.626 $\pm$ 0.009 & 0.566 $\pm$ 0.032 & 0.625 $\pm$ 0.021 & 0.595 $\pm$ 0.012 & 0.659 $\pm$ 0.009 \\
+        & 9 & 0.573 $\pm$ 0.009 & \textbf{0.672 $\pm$ 0.007} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.573 $\pm$ 0.007 & 0.627 $\pm$ 0.009 & 0.569 $\pm$ 0.031 & 0.627 $\pm$ 0.014 & 0.595 $\pm$ 0.013 & 0.661 $\pm$ 0.008 \\
+        & 10 & 0.574 $\pm$ 0.009 & \textbf{0.670 $\pm$ 0.007} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.574 $\pm$ 0.008 & 0.629 $\pm$ 0.010 & 0.566 $\pm$ 0.032 & 0.628 $\pm$ 0.019 & 0.596 $\pm$ 0.013 & 0.666 $\pm$ 0.008 \\
+        & 11 & 0.573 $\pm$ 0.009 & \textbf{0.670 $\pm$ 0.008} & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.574 $\pm$ 0.008 & 0.629 $\pm$ 0.010 & 0.567 $\pm$ 0.033 & 0.633 $\pm$ 0.020 & 0.596 $\pm$ 0.013 & 0.669 $\pm$ 0.008 \\
+        & 12 & 0.574 $\pm$ 0.009 & 0.672 $\pm$ 0.006 & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.574 $\pm$ 0.008 & 0.630 $\pm$ 0.010 & 0.569 $\pm$ 0.030 & 0.630 $\pm$ 0.018 & 0.596 $\pm$ 0.014 & \textbf{0.673 $\pm$ 0.008} \\
+        & 13 & 0.574 $\pm$ 0.009 & 0.675 $\pm$ 0.006 & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.575 $\pm$ 0.008 & 0.630 $\pm$ 0.010 & 0.565 $\pm$ 0.031 & 0.633 $\pm$ 0.017 & 0.596 $\pm$ 0.014 & \textbf{0.675 $\pm$ 0.008} \\
+        & 14 & 0.574 $\pm$ 0.009 & 0.673 $\pm$ 0.007 & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.575 $\pm$ 0.008 & 0.630 $\pm$ 0.011 & 0.566 $\pm$ 0.032 & 0.631 $\pm$ 0.015 & 0.597 $\pm$ 0.013 & \textbf{0.678 $\pm$ 0.008} \\
+        & 15 & 0.574 $\pm$ 0.009 & 0.673 $\pm$ 0.004 & 0.541 $\pm$ 0.029 & 0.608 $\pm$ 0.009 & 0.575 $\pm$ 0.008 & 0.630 $\pm$ 0.011 & 0.567 $\pm$ 0.031 & 0.631 $\pm$ 0.016 & 0.597 $\pm$ 0.014 & \textbf{0.681 $\pm$ 0.009} \\
+\bottomrule
+\end{tabular}
+}
+\caption{MI_ACC results across datasets, two CDMs (NCDM and CD-BPR), and varying numbers of submitted questions ($t$). The best (according to the metric objective) mean $\pm$ std in each row is in bold.}
+\label{tab:results-mi_acc}
+\end{table*}
+
+
