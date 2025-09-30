@@ -1,0 +1,106 @@
+{
+    "0": {
+        "step": 0,
+        "metric": "ma_f_b",
+        "mean": 0.6504580140113831,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "1": {
+        "step": 0,
+        "metric": "ma_prec",
+        "mean": 0.6473156332969665,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "2": {
+        "step": 0,
+        "metric": "ma_rec",
+        "mean": 0.6616674423217774,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "3": {
+        "step": 0,
+        "metric": "mae",
+        "mean": 0.3186156332492829,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "4": {
+        "step": 0,
+        "metric": "meta_doa",
+        "mean": 0.5868549702016475,
+        "std": 4.965068306494546e-17,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "5": {
+        "step": 0,
+        "metric": "mi_acc",
+        "mean": 0.6813843607902528,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "6": {
+        "step": 0,
+        "metric": "mi_auc",
+        "mean": 0.661667428251159,
+        "std": 4.965068306494546e-17,
+        "n": 5,
+        "type": "predictive"
+    },
+    "7": {
+        "step": 0,
+        "metric": "mi_f_b",
+        "mean": 0.7540337443351746,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "8": {
+        "step": 0,
+        "metric": "mi_prec",
+        "mean": 0.7975637912750244,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "9": {
+        "step": 0,
+        "metric": "mi_rec",
+        "mean": 0.715116274356842,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "10": {
+        "step": 0,
+        "metric": "pc-er",
+        "mean": 0.2549072265625,
+        "std": 0.0,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "11": {
+        "step": 0,
+        "metric": "rm",
+        "mean": 0.37345052741188556,
+        "std": 4.965068306494546e-17,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "12": {
+        "step": 0,
+        "metric": "rmse",
+        "mean": 0.5643702507019044,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    }
+}

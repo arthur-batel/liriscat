@@ -1,0 +1,106 @@
+{
+    "0": {
+        "step": 0,
+        "metric": "ma_f_b",
+        "mean": 0.6890900611877442,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "1": {
+        "step": 0,
+        "metric": "ma_prec",
+        "mean": 0.6889527440071106,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "2": {
+        "step": 0,
+        "metric": "ma_rec",
+        "mean": 0.6892828941345215,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "3": {
+        "step": 0,
+        "metric": "mae",
+        "mean": 0.3067264497280121,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "4": {
+        "step": 0,
+        "metric": "meta_doa",
+        "mean": 0.7256826841337931,
+        "std": 7.021666937153402e-17,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "5": {
+        "step": 0,
+        "metric": "mi_acc",
+        "mean": 0.6932735204696656,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "6": {
+        "step": 0,
+        "metric": "mi_auc",
+        "mean": 0.6892828931502804,
+        "std": 7.021666937153402e-17,
+        "n": 5,
+        "type": "predictive"
+    },
+    "7": {
+        "step": 0,
+        "metric": "mi_f_b",
+        "mean": 0.6530977129936217,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "8": {
+        "step": 0,
+        "metric": "mi_prec",
+        "mean": 0.6502009034156799,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "9": {
+        "step": 0,
+        "metric": "mi_rec",
+        "mean": 0.6560592174530029,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "10": {
+        "step": 0,
+        "metric": "pc-er",
+        "mean": 0.07769470214843749,
+        "std": 6.206335383118182e-18,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "11": {
+        "step": 0,
+        "metric": "rm",
+        "mean": 0.8170588125764888,
+        "std": 9.930136612989092e-17,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "12": {
+        "step": 0,
+        "metric": "rmse",
+        "mean": 0.5538163900375366,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    }
+}

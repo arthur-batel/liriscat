@@ -1,0 +1,98 @@
+{
+    "0": {
+        "step": 0,
+        "metric": "ma_f_b",
+        "mean": 0.5968003869056702,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "1": {
+        "step": 0,
+        "metric": "ma_prec",
+        "mean": 0.5966884851455689,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "2": {
+        "step": 0,
+        "metric": "ma_rec",
+        "mean": 0.6063528418540955,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "3": {
+        "step": 0,
+        "metric": "mae",
+        "mean": 0.39460068941116333,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "4": {
+        "step": 0,
+        "metric": "meta_doa",
+        "mean": 0.49094911262378754,
+        "std": 4.2998752849492583e-17,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "5": {
+        "step": 0,
+        "metric": "mi_acc",
+        "mean": 0.6335793614387513,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "6": {
+        "step": 0,
+        "metric": "mi_f_b",
+        "mean": 0.7181749224662781,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "7": {
+        "step": 0,
+        "metric": "mi_prec",
+        "mean": 0.7619685888290406,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "8": {
+        "step": 0,
+        "metric": "mi_rec",
+        "mean": 0.6799959659576416,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    },
+    "9": {
+        "step": 0,
+        "metric": "pc-er",
+        "mean": -0.037652587890625006,
+        "std": 4.388541835720876e-18,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "10": {
+        "step": 0,
+        "metric": "rm",
+        "mean": 0.011893233497250896,
+        "std": 7.757919228897728e-19,
+        "n": 5,
+        "type": "interpretability"
+    },
+    "11": {
+        "step": 0,
+        "metric": "rmse",
+        "mean": 0.5191967487335205,
+        "std": 0.0,
+        "n": 5,
+        "type": "predictive"
+    }
+}

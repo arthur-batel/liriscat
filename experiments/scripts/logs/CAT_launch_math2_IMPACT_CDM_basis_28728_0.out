@@ -1,0 +1,39 @@
+PID 3559092 sees CUDA_VISIBLE_DEVICES = 0
+→ torch.device is 0 Tesla V100-SXM2-16GB
+[INFO 49:03] Using device: cuda
+[INFO 49:03] #### config : {'seed': 0, 'dataset_name': 'math2', 'load_params': True, 'save_params': False, 'embs_path': '../embs/', 'params_path': '../ckpt/', 'early_stopping': True, 'esc': 'error', 'verbose_early_stopping': False, 'disable_tqdm': False, 'valid_metric': 'rmse', 'learning_rate': 0.001, 'batch_size': 512, 'valid_batch_size': 10000, 'num_epochs': 100, 'eval_freq': 1, 'patience': 20, 'device': device(type='cuda'), 'lambda': 2.67605964593852e-06, 'tensorboard': False, 'flush_freq': True, 'pred_metrics': ['mi_acc', 'rmse', 'mae', 'mi_prec', 'mi_rec', 'mi_f_b', 'mi_auc', 'ma_prec', 'ma_rec', 'ma_f_b'], 'profile_metrics': ['meta_doa', 'pc-er', 'rm'], 'num_responses': 12, 'low_mem': False, 'n_query': 16, 'CDM': 'impact', 'i_fold': 0, 'num_inner_users_epochs': 9, 'num_inner_epochs': 10, 'inner_lr': 0.0001, 'inner_user_lr': 0.003, 'meta_lr': 0.05, 'meta_trainer': 'Adam', 'num_workers': 0, 'pin_memory': False, 'debug': False} ####
+[INFO 49:16] Random_cont_model
+[INFO 49:16] compiling CDM model
+[INFO 49:21] compiling selection model
+[INFO 49:21] ⏳ Début de l'entraînement...
+[INFO 49:21] ✅ Entraînement terminé en 0.00 secondes.
+[INFO 49:21] train on cuda
+Meta_loss tensor(0.7167, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7140, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7116, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7096, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7079, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7064, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7052, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7042, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7034, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7028, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7023, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7021, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7019, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7018, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7019, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7021, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7023, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7026, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7031, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7035, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7041, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7047, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7054, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7061, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7068, device='cuda:0', grad_fn=<DotBackward0>)
+---------- best_epoch : 13 ;   
+[WARNING 49:53] Computing RM on meta and QUERY set
+[INFO 49:56] RM: 0.8257394569194759
+[INFO 49:56] Fold 0; results: ({'mi_acc': 0.6988539695739746, 'rmse': 0.5487676858901978, 'mae': 0.3011459708213806, 'mi_prec': 0.6584102511405945, 'mi_rec': 0.6601941585540771, 'mi_f_b': 0.6593009829521179, 'mi_auc': 0.694795624660125, 'ma_prec': 0.6946859955787659, 'ma_rec': 0.6947956085205078, 'ma_f_b': 0.6947397589683533}, {'meta_doa': np.float64(0.7332565637714112), 'pc-er': 0.0919189453125, 'rm': 0.8257394569194759})

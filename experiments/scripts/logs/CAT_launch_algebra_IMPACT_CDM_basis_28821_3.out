@@ -1,0 +1,50 @@
+PID 1807687 sees CUDA_VISIBLE_DEVICES = 0
+→ torch.device is 0 Tesla V100-SXM2-16GB
+[INFO 50:28] Using device: cuda
+[INFO 50:28] #### config : {'seed': 0, 'dataset_name': 'algebra', 'load_params': True, 'save_params': False, 'embs_path': '../embs/', 'params_path': '../ckpt/', 'early_stopping': True, 'esc': 'error', 'verbose_early_stopping': False, 'disable_tqdm': False, 'valid_metric': 'rmse', 'learning_rate': 0.001, 'batch_size': 512, 'valid_batch_size': 10000, 'num_epochs': 100, 'eval_freq': 1, 'patience': 20, 'device': device(type='cuda'), 'lambda': 2.67605964593852e-06, 'tensorboard': False, 'flush_freq': True, 'pred_metrics': ['mi_acc', 'rmse', 'mae', 'mi_prec', 'mi_rec', 'mi_f_b', 'mi_auc', 'ma_prec', 'ma_rec', 'ma_f_b'], 'profile_metrics': ['meta_doa', 'pc-er', 'rm'], 'num_responses': 12, 'low_mem': False, 'n_query': 25, 'CDM': 'impact', 'i_fold': 3, 'num_inner_users_epochs': 9, 'num_inner_epochs': 10, 'inner_lr': 0.0001, 'inner_user_lr': 0.009, 'meta_lr': 0.05, 'meta_trainer': 'Adam', 'num_workers': 0, 'pin_memory': False, 'debug': False} ####
+[INFO 50:56] Random_cont_model
+[INFO 50:57] compiling CDM model
+[INFO 51:06] compiling selection model
+[INFO 51:06] ⏳ Début de l'entraînement...
+[INFO 51:06] ✅ Entraînement terminé en 0.00 secondes.
+[INFO 51:06] train on cuda
+Meta_loss tensor(0.7286, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7270, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7256, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7243, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7231, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7220, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7210, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7201, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7193, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7186, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7179, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7173, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7167, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7162, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7157, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7153, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7149, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7146, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7143, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7140, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7139, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7138, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7136, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7136, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7136, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7136, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7136, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7137, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7138, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7140, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7141, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7143, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7145, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7148, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7150, device='cuda:0', grad_fn=<DotBackward0>)
+Meta_loss tensor(0.7153, device='cuda:0', grad_fn=<DotBackward0>)
+---------- best_epoch : 24 ;   
+[WARNING 51:21] Computing RM on meta and QUERY set
+[INFO 51:24] RM: 0.11896631946581768
+[INFO 51:24] Fold 3; results: ({'mi_acc': 0.7578946948051453, 'rmse': 0.4920419156551361, 'mae': 0.24210526049137115, 'mi_prec': 0.8769679069519043, 'mi_rec': 0.8051391839981079, 'mi_f_b': 0.8395199179649353, 'mi_auc': 0.6944828081378897, 'ma_prec': 0.6627264022827148, 'ma_rec': 0.6944828033447266, 'ma_f_b': 0.6734018325805664}, {'meta_doa': np.float64(0.5227992240577457), 'pc-er': 0.200439453125, 'rm': 0.11896631946581768})
