@@ -48,185 +48,421 @@ def ecdf_percentiles(X, d, value_per_dim):
 
 
         
-def plot_embedding_distribution(i, j, t_np, test_emb, bins=50, xlim=None, ylim=None, test_data=None, train_emb=None,q_ids=None, u_ids=None,l_ids=None):
+import numpy as np
+import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.transforms import blended_transform_factory as _bt
 
+import numpy as np
+import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.transforms import blended_transform_factory as _bt
+
+def plot_embedding_distribution(
+    i, j, t_np, test_emb, bins=50, xlim=None, ylim=None,
+    test_data=None, train_emb=None, q_ids=None, u_ids=None, l_ids=None
+):
     skills = {
-    1: "Property of inequality",
-    2: "Methods of data sampling",
-    3: "Geometric progression",
-    4: "Function versus equation",
-    5: "Solving triangle",
-    6: "Principles of data analysis",
-    7: "Classical probability theory",
-    8: "Linear programming",
-    9: "Definitions of algorithm",
-    10: "Algorithm logic",
-    11: "Arithmetic progression",
-    12: "Spatial imagination",
-    13: "Abstract summarization",
-    14: "Reasoning and demonstration",
-    15: "Calculation",
-    16: "Data handling"
+        1: "Property of inequality", 2: "Methods of data sampling",
+        3: "Geometric progression", 4: "Function versus equation",
+        5: "Solving triangle", 6: "Principles of data analysis",
+        7: "Classical probability theory", 8: "Linear programming",
+        9: "Definitions of algorithm", 10: "Algorithm logic",
+        11: "Arithmetic progression", 12: "Spatial imagination",
+        13: "Abstract summarization", 14: "Reasoning and demonstration",
+        15: "Calculation", 16: "Data handling"
     }
-    
-    x = t_np[:, i]
-    y = t_np[:, j]
 
-    # Main plot with marginal densities
-    g = sns.jointplot(
-        x=x, y=y,
-        kind="kde",  # KDE for both joint and marginals
-        fill=False,  # Contours only (no fill in joint)
-        color="black",
-        levels=8
-    )
-
-        # Set custom limits if provided
-    if xlim is not None:
-        g.ax_joint.set_xlim(xlim)
-    if ylim is not None:
-        g.ax_joint.set_ylim(ylim)
-
+    # --- student selection (as in your code)
     test_users = torch.tensor(list(test_data.users_id))
-    u_test = (-(test_emb[:,:,torch.tensor([i,j])][:,test_users,:]).std(axis=0).sum(dim=1)).argsort()
+    u_test = (-(test_emb[:, :, torch.tensor([i, j])][:, test_users, :]).std(axis=0).sum(dim=1)).argsort()
     users = test_users[u_test][:10]
 
-    v=test_data.df[test_data.df['user_id'].isin(users.numpy())]
-    w=v[test_data.df['dimension_id']==0]
-    x = w.groupby('user_id')['correct'].mean()
-    u = x.index[x.argmax()]
+    v = test_data.df[test_data.df['user_id'].isin(users.numpy())]
+    w = v[test_data.df['dimension_id'] == 0]
+    xg = w.groupby('user_id')['correct'].mean()
+    u = int(xg.index[xg.argmax()])
 
-    g.ax_joint.scatter(test_emb[:,u,i],test_emb[:,u,j], s=15, color='tab:red')  
-
-    print(l_ids[u_ids==u])
-    print(q_ids[u_ids==u])
-
-    # Grades : 
-    g_i = int((test_data.df[test_data.df['user_id']==u][test_data.df['dimension_id']==i]['correct'].mean()-1)*5)
-    g_j = int((test_data.df[test_data.df['user_id']==u][test_data.df['dimension_id']==j]['correct'].mean()-1)*5)
-
+    # Grades
+    gi_mean = test_data.df[(test_data.df['user_id'] == u) & (test_data.df['dimension_id'] == i)]['correct'].mean()
+    gj_mean = test_data.df[(test_data.df['user_id'] == u) & (test_data.df['dimension_id'] == j)]['correct'].mean()
+    try: g_i = int((gi_mean - 1) * 5)
+    except: g_i = 0
+    try: g_j = int((gj_mean - 1) * 5)
+    except: g_j = 0
     print(f"Student {u} : Category {i}: {g_i}/100, Category {j}: {g_j}/100")
+
     
+
+    # --- background KDE
+    x = t_np[:, i]
+    y = t_np[:, j]
+    g = sns.jointplot(x=x, y=y, kind="kde", fill=False, color="black", levels=8)
+    ax = g.ax_joint
+
+    # trajectory + label
     
+    ax.scatter(test_emb[:, u, i], test_emb[:, u, j], s=15, color='tab:red')
+
+    if (u_ids is not None) and (l_ids is not None):
+        print(l_ids[u_ids == u])
+    if (u_ids is not None) and (q_ids is not None):
+        print(q_ids[u_ids == u])
+        
+    ax.plot(test_emb[:, u, i], test_emb[:, u, j], color='tab:red',
+            label=f"Student {u}. Grades: cat. {i}, {g_i}/5; cat. {j}, {g_j}/5")
+
+    # Honor provided limits, then read authoritative limits from the joint axes
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+
+    # Freeze autoscaling so later artists don't shift limits
+    ax.set_autoscale_on(False)
+
+    # --- transforms for marginals (data on variable axis, axes on density axis)
+    bx = _bt(g.ax_marg_x.transData, g.ax_marg_x.transAxes)  # (x=data, y=axes)
+    by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)  # (x=axes, y=data)  
+
+
+    # --- per-step guides (DRAWN IN DATA COORDS ON THE JOINT AXES)
+    # vertical segment: from (px, py) up to top y1
+    # horizontal segment: from (px, py) right to x1
     for idx in range(16):
         px = float(test_emb[idx, u, i])
         py = float(test_emb[idx, u, j])
 
-        ylim = g.ax_joint.get_ylim()    
-        xlim = g.ax_joint.get_xlim()
+        # vertical from the exact (px, py) to the top
+        ax.plot([px, px], [py, y1], linestyle=':',
+                color=('red' if idx == 5 else 'black'), alpha=0.75, zorder=1)
 
-        perf_x=ecdf_percentiles(train_emb,i,px)
-        perf_y=ecdf_percentiles(train_emb,j,py)
+        # horizontal only for idx 0 and 15 (per your logic)
+        if idx in (0, 15):
+            ax.plot([px, x1], [py, py], linestyle=':',
+                    color='black', alpha=0.75, zorder=1)
 
-        if idx!=5 :
+        # x-marginal tick (axes y-coords so it can go above 1.0 if you like)
+        g.ax_marg_x.plot([px, px], [0.0, 0.8], transform=bx, linestyle=':',
+                         color=('red' if idx == 5 else 'black'), alpha=0.75, clip_on=False)
 
-            # Vertical dotted line (to top marginal axis)
-            g.ax_joint.axvline(x=px, ymin=(py-ylim[0])/(ylim[1]-ylim[0]), linestyle=':', color='black', alpha=0.75)
-            g.ax_marg_x.axvline(px, linestyle=':', color='black', alpha=0.75)
-            # Add user index label above
-            g.ax_marg_x.text(px, g.ax_marg_x.get_ylim()[1]+0.9, str(idx+1), color='black', fontsize=9.5,
-                             ha='center', va='top', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.1'))
+        # step index above x-marginal
+        g.ax_marg_x.text(px, 0.8, str(idx + 1), transform=bx,
+                         color=('red' if idx == 5 else 'black'), fontsize=9.5,
+                         ha='center', va='bottom',
+                         bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.1'))
 
-        else : 
-            # Vertical dotted line (to top marginal axis)
-            g.ax_joint.axvline(x=px, ymin=(py-ylim[0])/(ylim[1]-ylim[0]), linestyle=':', color='red', alpha=0.75)
-            g.ax_marg_x.axvline(px, linestyle=':', color='red', alpha=0.75)
-            # Add user index label above
-            g.ax_marg_x.text(
-                px, g.ax_marg_x.get_ylim()[1]+0.9, str(idx+1),
-                color='red', fontsize=9.5, ha='center', va='top', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.1')
-            )
+        # percentile label every 3 steps (x-marginal)
+        try:
+            perf_x = ecdf_percentiles(train_emb, i, px)
+        except Exception:
+            perf_x = None
+        if (idx % 3 == 0) and (perf_x is not None):
+            g.ax_marg_x.text(px, 0.55, f"{perf_x}%", transform=bx,
+                             color=('red' if idx == 8 else 'black'), fontsize=9.5,
+                             ha='center', va='top',
+                             bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
-            
-        if (idx//3)==idx/3:
-            if idx!=8 : 
-                g.ax_marg_x.text(px, g.ax_marg_x.get_ylim()[1]-1.5, str(perf_x)+'%', color='black', fontsize=9.5,
-                                 ha='center', va='top', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-            else : 
-                g.ax_marg_x.text(px, g.ax_marg_x.get_ylim()[1]-1.5, str(perf_x)+'%', color='red', fontsize=9.5,
-                                 ha='center', va='top', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+        # y-marginal ticks/labels at idx 0 and 15
+        if idx in (0, 15):
+            g.ax_marg_y.plot([0.0, 1.0], [py, py], transform=by, linestyle=':',
+                             color='black', alpha=0.75, clip_on=False)
+            g.ax_marg_y.text(1.0, py, str(idx + 1), transform=by, color='black', fontsize=9.5,
+                             ha='left', va='center',bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+            try:
+                perf_y = ecdf_percentiles(train_emb, j, py)
+                g.ax_marg_y.text(0.70, py, f"{perf_y}%", transform=by, color='black', fontsize=9.5,
+                                 ha='right', va='center',
+                                 bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+            except Exception:
+                pass
 
-        if idx==0:
-            g.ax_marg_x.text( g.ax_marg_x.get_xlim()[1]+0.05, g.ax_marg_x.get_ylim()[1]+1, "Number of\nsubmitted questions", color='black', fontsize=9.5,
-                         ha='left', va='top', rotation=0)
-            g.ax_marg_x.text( g.ax_marg_x.get_xlim()[1]+0.05, g.ax_marg_x.get_ylim()[1]-1.5, "> x% of the\ntraining students", color='black', fontsize=9.5,
-                             ha='left', va='top', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-
-            # Horizontal dotted line (to right marginal axis)
-            g.ax_joint.axhline(py, xmin=(px-xlim[0])/(xlim[1]-xlim[0]) ,linestyle=':', color='black', alpha=0.75)
-            g.ax_marg_y.axhline(py, linestyle=':', color='black', alpha=0.75)
-            g.ax_marg_y.text(g.ax_marg_y.get_xlim()[1]+1.7, py, str(idx+1), color='black', fontsize=9.5,
-                         ha='right', va='center', rotation=0)
-             # pourcentage :
-            g.ax_marg_y.text(g.ax_marg_y.get_xlim()[1]-1.5, py, str(perf_y)+'%', color='black', fontsize=9.5,
-                             ha='center', va='center', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-        if idx==15:
-            # Horizontal dotted line (to right marginal axis)
-            g.ax_joint.axhline(py, xmin=(px-xlim[0])/(xlim[1]-xlim[0]) ,linestyle=':', color='black', alpha=0.75)
-            g.ax_marg_y.axhline(py, linestyle=':', color='black', alpha=0.75)
-            g.ax_marg_y.text(g.ax_marg_y.get_xlim()[1]+1.7, py, str(idx+1), color='black', fontsize=9.5,
-                         ha='center', va='center', rotation=0)
-            # pourcentage :
-            g.ax_marg_y.text(g.ax_marg_y.get_xlim()[1]-1.5, py, str(perf_y)+'%', color='black', fontsize=9.5,
-                             ha='center', va='center', rotation=0, bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
     
-    g.ax_joint.plot(test_emb[:,u,i],test_emb[:,u,j], color='tab:red', label=f"Student {u}. Grades: cat. {i}, {g_i}/5; cat. {j}, {g_j}/5")  
-    cat_i = skills[i+1]
-    cat_j = skills[j+1]
-    g.set_axis_labels(f'Profile dimension {i} : math category "{cat_i}"', f'Profile dimension {j} : math category "{cat_j}"', fontsize=11)
+
+    # --- global averages (data coords for joint; blended for marginals)
+    px_avg = float(np.nanmean(t_np[:, i]))
+    py_avg = float(np.nanmean(t_np[:, j]))
+    ax.plot([px_avg, test_emb[0, u, i]], [py_avg, test_emb[0, u, j]], color="black", zorder=1)
+    ax.scatter(px_avg, py_avg, s=15, color="black", zorder=2)
+
+    # vertical from (px_avg, py_avg) to top; horizontal from (px_avg, py_avg) to right
+    ax.plot([px_avg, px_avg], [py_avg, y1], linestyle=':', color='black', alpha=0.75, zorder=1)
+
+    # x-marginal vertical guide up to 1.30 (above the panel)
+    g.ax_marg_x.plot([px_avg, px_avg], [0.0, 1.1], transform=bx, linestyle=':',
+                     color='black', alpha=0.75, clip_on=False)
+    g.ax_marg_x.text(px_avg, 1.1, "Init (t=0): \nAvg train value", transform=bx,
+                     ha='center', va='bottom', fontsize=9.5,
+                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+
+    # static marginal hints
+    g.ax_marg_x.text(1.10, 0.80, "Number of\nsubmitted questions",
+                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=9.5,
+                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+    g.ax_marg_x.text(1.10, 0.40, "> x% of the\ntraining students",
+                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=9.5,
+                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+
+    # labels
+    cat_i = skills[i + 1]
+    cat_j = skills[j + 1]
+    g.set_axis_labels(f'Profile dimension {i} : math category "{cat_i}"',
+                      f'Profile dimension {j} : math category "{cat_j}"', fontsize=11)
 
     plt.tight_layout()
     plt.legend(framealpha=1)
     plt.savefig("../data/students_distrib.png", dpi=400, bbox_inches="tight")
     plt.show()
+
+
+    
 import numpy as np, seaborn as sns, matplotlib.pyplot as plt, torch
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.cm import ScalarMappable
 
 _cmap_rg = LinearSegmentedColormap.from_list("RedGreen", ["#d62728","#2ca02c"])
 
-def plot_embedding_distribution_flow(i,j,t_np,test_emb,bins=50,xlim=None,ylim=None,
-    test_data=None,train_emb=None,flow_bins=30,min_count=3,stream_density=1.2,
-    overlay_time_idx=-1,overlay_color="C2",overlay_label="final-step",
-    add_colorbar=True, flow_anchor="end"):
-    if isinstance(test_emb,torch.Tensor): test_emb=test_emb.detach().cpu().numpy()
-    t_np=np.asarray(t_np); x_bg=t_np[:,i]; y_bg=t_np[:,j]
-    g=sns.jointplot(x=x_bg,y=y_bg,kind="kde",fill=False,color="black",levels=8)
-    if xlim is not None: g.ax_joint.set_xlim(xlim)
-    if ylim is not None: g.ax_joint.set_ylim(ylim)
-    xlim=g.ax_joint.get_xlim(); ylim=g.ax_joint.get_ylim()
-    T,N,D=test_emb.shape; Xt=test_emb[:,:,i]; Yt=test_emb[:,:,j]
-    dX=Xt[1:]-Xt[:-1]; dY=Yt[1:]-Yt[:-1]; X0=Xt[:-1]; Y0=Yt[:-1]; X1=Xt[1:]; Y1=Yt[1:]
-    Xa,Ya=(X0,Y0) if flow_anchor=="start" else ((X1,Y1) if flow_anchor=="end" else (0.5*(X0+X1),0.5*(Y0+Y1)))
-    step_ids=np.repeat(np.arange(1,T)[:,None],N,axis=1).reshape(-1)
-    Xa_f,Ya_f,dX_f,dY_f=map(lambda a:a.reshape(-1),[Xa,Ya,dX,dY])
-    m=(np.isfinite(Xa_f)&np.isfinite(Ya_f)&np.isfinite(dX_f)&np.isfinite(dY_f)&
-       (Xa_f>=xlim[0])&(Xa_f<=xlim[1])&(Ya_f>=ylim[0])&(Ya_f<=ylim[1]))
-    Xa_f,Ya_f,dX_f,dY_f,step_ids=Xa_f[m],Ya_f[m],dX_f[m],dY_f[m],step_ids[m]
-    x_edges=np.linspace(xlim[0],xlim[1],flow_bins+1); y_edges=np.linspace(ylim[0],ylim[1],flow_bins+1)
-    Xc,Yc=np.meshgrid(0.5*(x_edges[:-1]+x_edges[1:]),0.5*(y_edges[:-1]+y_edges[1:]))
-    U=np.zeros_like(Xc); V=np.zeros_like(Yc); C=np.zeros_like(Xc,int); Tval=np.zeros_like(Xc,float)
-    if Xa_f.size>0:
-        xi=np.clip(np.digitize(Xa_f,x_edges)-1,0,flow_bins-1); yi=np.clip(np.digitize(Ya_f,y_edges)-1,0,flow_bins-1)
-        for k in range(len(Xa_f)): r,c=yi[k],xi[k]; U[r,c]+=dX_f[k]; V[r,c]+=dY_f[k]; C[r,c]+=1; Tval[r,c]+=step_ids[k]
-        valid=C>=min_count
-        U_plot=np.where(valid,U/np.maximum(C,1),0.0); V_plot=np.where(valid,V/np.maximum(C,1),0.0)
-        T_plot=np.where(valid,Tval/np.maximum(C,1),np.nan)
-        tmin,tmax=np.nanmin(T_plot),np.nanmax(T_plot); norm=(T_plot-tmin)/((tmax-tmin)+1e-9)
-        g.ax_joint.streamplot(Xc,Yc,U_plot,V_plot,density=stream_density*1.5,color=norm,cmap=_cmap_rg,linewidth=1.5,arrowsize=1.5)
-        if add_colorbar:
-            sm=ScalarMappable(norm=Normalize(vmin=tmin,vmax=tmax),cmap=_cmap_rg); sm.set_array([])
-            cb=g.figure.colorbar(sm,ax=g.ax_joint,fraction=0.046,pad=0.04)
-            ticks=np.linspace(np.ceil(tmin),np.floor(tmax),num=min(6,int(max(2,tmax-tmin+1)))).astype(int)
-            cb.set_ticks(ticks); cb.set_label("Number of submitted questions (t)")
-    t_sel=overlay_time_idx if overlay_time_idx>=0 else (T+overlay_time_idx); t_sel=max(0,min(T-1,t_sel))
-    x_last=Xp=Xt[t_sel]; y_last=Yp=Yt[t_sel]
-    x_last=x_last[np.isfinite(x_last)]; y_last=y_last[np.isfinite(y_last)]
-    if x_last.size>1: sns.kdeplot(x=x_last, ax=g.ax_marg_x, fill=False, color=overlay_color, lw=1.8, clip=xlim, label=f"{overlay_label} (t={t_sel})")
-    if y_last.size>1: sns.kdeplot(y=y_last, ax=g.ax_marg_y, fill=False, color=overlay_color, lw=1.8, clip=ylim)
-    if (getattr(g.ax_marg_x,'legend_',None) is None) and x_last.size>1: g.ax_marg_x.legend(loc="upper center",frameon=False,fontsize=9.5)
-    g.set_axis_labels(f'Profile dimension {i+1}', f'Profile dimension {j+1}', fontsize=11)
-    plt.tight_layout(); g.figure.savefig(f"../data/students_flow{i}{j}.png",dpi=400,bbox_inches="tight"); plt.show()
+import numpy as np
+import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, LinearSegmentedColormap
+from matplotlib.cm import ScalarMappable
+
+import numpy as np
+import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.cm import ScalarMappable
+
+
+def plot_embedding_distribution_flow(
+    i, j,
+    t_np,                # background embeddings: shape (Tb, D)
+    test_emb,            # time-evolving cohort: shape (T, N, D)
+    *,
+    bins=50,
+    xlim=None, ylim=None,
+    test_data=None, train_emb=None,  # (kept for API compatibility; unused)
+    flow_bins=30, min_count=3, stream_density=1.2,
+    overlay_time_idx=-1, overlay_color="C2", overlay_label="final-step",
+    add_colorbar=True, flow_anchor="end"
+):
+    """
+    Joint KDE of background embeddings on dims (i, j), overlaid with a temporal flow field
+    computed from test_emb trajectories; plus overlay of the selected time index marginals.
+    Marginal axes are kept on the SAME density scales between background and overlay.
+
+    Parameters
+    ----------
+    i, j : int
+        Indices of the two embedding dimensions to visualize.
+    t_np : array-like, shape (Tb, D)
+        Background points used for the black KDE in the joint plot and marginals.
+    test_emb : array-like or torch.Tensor, shape (T, N, D)
+        Time series of embeddings; flow is computed from consecutive steps.
+    bins : int
+        Unused here (kept for API compatibility).
+    xlim, ylim : tuple or None
+        Axis limits for joint (and synchronized to marginals). If None, inferred.
+    flow_bins : int
+        Number of 2D bins for averaging local flow vectors.
+    min_count : int
+        Minimum count per bin to render a vector.
+    stream_density : float
+        Streamplot density parameter.
+    overlay_time_idx : int
+        Time index to overlay on the marginals (supports negatives, e.g. -1 for last).
+    overlay_color : str
+        Color for the overlay marginal KDEs.
+    overlay_label : str
+        Label to show in the legend for the overlay marginals.
+    add_colorbar : bool
+        Whether to add a colorbar encoding mean time index per bin in the streamplot.
+    flow_anchor : {"start","end","mid"}
+        Where to anchor the flow vectors (start = (X0, Y0), end = (X1, Y1), mid = midpoint).
+    """
+
+    # --- Prepare inputs ---
+    if isinstance(test_emb, torch.Tensor):
+        test_emb = test_emb.detach().cpu().numpy()
+    t_np = np.asarray(t_np)
+
+    # Background data on the selected dims
+    x_bg, y_bg = t_np[:, i], t_np[:, j]
+
+    # --- Define colormap locally ---
+    _cmap_rg = LinearSegmentedColormap.from_list(
+        "rg_no_yellow", [(0.0, "#d73027"), (1.0, "#1a9850")]
+    )
+
+    # --- Base joint KDE plot from background points ---
+    g = sns.jointplot(
+        x=x_bg, y=y_bg, kind="kde",
+        fill=False, color="black", levels=8, ratio=2
+    )
+
+    # Set (and then read back) authoritative joint limits
+    if xlim is not None:
+        g.ax_joint.set_xlim(xlim)
+    if ylim is not None:
+        g.ax_joint.set_ylim(ylim)
+    xlim = g.ax_joint.get_xlim()
+    ylim = g.ax_joint.get_ylim()
+
+    # Synchronize variable ranges to marginals
+    # (x-marginal: variable is x -> set xlim; y-marginal: variable is y -> set ylim)
+    g.ax_marg_x.set_xlim(xlim)
+    g.ax_marg_y.set_ylim(ylim)
+
+    # Lock current density scale limits of the marginals BEFORE overlay,
+    # so adding overlay curves won't rescale them.
+    marg_x_ylim = g.ax_marg_x.get_ylim()  # density range on x-marginal (y-axis)
+    marg_y_xlim = g.ax_marg_y.get_xlim()  # density range on y-marginal (x-axis)
+
+    # --- Flow computation from test_emb on dims (i, j) ---
+    T, N, D = test_emb.shape
+    Xt, Yt = test_emb[:, :, i], test_emb[:, :, j]
+
+    # Differences over time
+    dX, dY = Xt[1:] - Xt[:-1], Yt[1:] - Yt[:-1]
+    X0, Y0, X1, Y1 = Xt[:-1], Yt[:-1], Xt[1:], Yt[1:]
+
+    if flow_anchor == "start":
+        Xa, Ya = X0, Y0
+    elif flow_anchor == "end":
+        Xa, Ya = X1, Y1
+    else:  # "mid"
+        Xa, Ya = 0.5 * (X0 + X1), 0.5 * (Y0 + Y1)
+
+    # Flatten everything (T-1, N) -> ((T-1)*N,)
+    step_ids = np.repeat(np.arange(1, T)[:, None], N, axis=1).reshape(-1)
+    Xa_f = Xa.reshape(-1)
+    Ya_f = Ya.reshape(-1)
+    dX_f = dX.reshape(-1)
+    dY_f = dY.reshape(-1)
+
+    # Filter valid points inside joint limits and finite values
+    m = (
+        np.isfinite(Xa_f) & np.isfinite(Ya_f) &
+        np.isfinite(dX_f) & np.isfinite(dY_f) &
+        (Xa_f >= xlim[0]) & (Xa_f <= xlim[1]) &
+        (Ya_f >= ylim[0]) & (Ya_f <= ylim[1])
+    )
+    Xa_f, Ya_f, dX_f, dY_f, step_ids = Xa_f[m], Ya_f[m], dX_f[m], dY_f[m], step_ids[m]
+
+    # --- Bin & aggregate vectors ---
+    x_edges = np.linspace(xlim[0], xlim[1], int(flow_bins) + 1)
+    y_edges = np.linspace(ylim[0], ylim[1], int(flow_bins) + 1)
+    Xc, Yc = np.meshgrid(
+        0.5 * (x_edges[:-1] + x_edges[1:]),
+        0.5 * (y_edges[:-1] + y_edges[1:])
+    )
+    U = np.zeros_like(Xc)
+    V = np.zeros_like(Yc)
+    C = np.zeros_like(Xc, dtype=int)
+    Tval = np.zeros_like(Xc, dtype=float)
+
+    have_vectors = False
+    if Xa_f.size > 0:
+        xi = np.clip(np.digitize(Xa_f, x_edges) - 1, 0, len(x_edges) - 2)
+        yi = np.clip(np.digitize(Ya_f, y_edges) - 1, 0, len(y_edges) - 2)
+        for k in range(Xa_f.size):
+            r, c = yi[k], xi[k]
+            U[r, c] += dX_f[k]
+            V[r, c] += dY_f[k]
+            C[r, c] += 1
+            Tval[r, c] += step_ids[k]
+
+        valid = C >= min_count
+        if np.any(valid):
+            have_vectors = True
+            U_plot = np.where(valid, U / np.maximum(C, 1), 0.0)
+            V_plot = np.where(valid, V / np.maximum(C, 1), 0.0)
+            T_plot = np.where(valid, Tval / np.maximum(C, 1), np.nan)
+
+            # Normalize mean time for coloring; robust to equal tmin==tmax or NaNs
+            tmin, tmax = np.nanmin(T_plot), np.nanmax(T_plot)
+            if np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
+                norm_values = (T_plot - tmin) / (tmax - tmin)
+            else:
+                norm_values = np.zeros_like(T_plot)
+
+            # Streamplot
+            g.ax_joint.streamplot(
+                Xc, Yc, U_plot, V_plot,
+                density=stream_density,
+                color=norm_values, cmap=_cmap_rg,
+                linewidth=1.5, arrowsize=1.5
+            )
+
+            # Optional colorbar
+            if add_colorbar and np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
+                sm = ScalarMappable(Normalize(vmin=tmin, vmax=tmax), cmap=_cmap_rg)
+                sm.set_array([])
+                cb = g.figure.colorbar(sm, ax=g.ax_joint, fraction=0.046, pad=0.04)
+                # integer-ish ticks over [tmin, tmax]
+                lo = int(np.ceil(tmin))
+                hi = int(np.floor(tmax))
+                if hi <= lo:
+                    ticks = [lo]
+                else:
+                    ticks = np.linspace(lo, hi, num=min(6, hi - lo + 1), dtype=int)
+                cb.set_ticks(ticks)
+                cb.set_label("Mean time index in bin (t)")
+
+    # --- Overlay KDE for selected time on marginals (with locked scales) ---
+    # Determine the time index (support negatives)
+    t_sel = max(0, min(T - 1, overlay_time_idx if overlay_time_idx >= 0 else (T + overlay_time_idx)))
+    x_last = Xt[t_sel]
+    y_last = Yt[t_sel]
+    x_last = x_last[np.isfinite(x_last)]
+    y_last = y_last[np.isfinite(y_last)]
+
+    # Draw overlay marginals, clipped to variable ranges; keep density-limits unchanged
+    if x_last.size > 1:
+        sns.kdeplot(x=x_last, ax=g.ax_marg_x, fill=False, color=overlay_color, lw=1.8, clip=xlim)
+    if y_last.size > 1:
+        sns.kdeplot(y=y_last, ax=g.ax_marg_y, fill=False, color=overlay_color, lw=1.8, clip=ylim)
+
+    # Restore density scales for the marginals so both background and overlay share identical scales
+    g.ax_marg_x.set_ylim(marg_x_ylim)
+    g.ax_marg_y.set_xlim(marg_y_xlim)
+
+    # Optional legend on the x-marginal
+    if getattr(g.ax_marg_x, 'legend_', None) is None and (x_last.size > 1 or y_last.size > 1):
+        g.ax_marg_x.legend(
+            ["train profile distrib.", f"{overlay_label} (t={t_sel})"],
+            loc='upper right', bbox_to_anchor=(1.2, 0.8),
+            frameon=False, fontsize=9.5
+        )
+
+    # --- Labels and layout ---
+    skills = {
+        1: "Property of inequality", 2: "Methods of data sampling",
+        3: "Geometric progression", 4: "Function versus equation",
+        5: "Solving triangle", 6: "Principles of data analysis",
+        7: "Classical probability theory", 8: "Linear programming",
+        9: "Definitions of algorithm", 10: "Algorithm logic",
+        11: "Arithmetic progression", 12: "Spatial imagination",
+        13: "Abstract summarization", 14: "Reasoning and demonstration",
+        15: "Calculation", 16: "Data handling"
+    }
+    g.set_axis_labels(
+        f'Profile dimension {i+1}: "{skills.get(i+1, f"Dim {i+1}")}"',
+        f'Profile dimension {j+1}: "{skills.get(j+1, f"Dim {j+1}")}"',
+        fontsize=11
+    )
+
+    plt.tight_layout()
+    g.figure.savefig(f"../data/students_flow{i}{j}.png", dpi=400, bbox_inches="tight")
+    plt.show()
+
 
 
 import seaborn as sns, matplotlib.pyplot as plt, torch, numpy as np
@@ -361,14 +597,15 @@ def plot_embedding_distribution_comp(
     py_avg = float(np.nanmean(t_np[:, j]))
     ax.vlines(px_avg, py_avg, y1, linestyles=':', color='black', alpha=0.6, zorder=1)
     ax.hlines(py_avg, px_avg, x1, linestyles=':', color='black', alpha=0.6, zorder=1)
+    ax.scatter(px_avg, py_avg, s=15, color='black', zorder=2)
 
     bx = _bt(g.ax_marg_x.transData, g.ax_marg_x.transAxes)   # x in data, y in axes
     by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)   # x in axes, y in data
     g.ax_marg_x.plot([px_avg, px_avg], [0, 1], transform=bx, linestyle=':', color='black', alpha=0.6, clip_on=False)
     g.ax_marg_y.plot([0, 1.1], [py_avg, py_avg], transform=by, linestyle=':', color='black', alpha=0.6, clip_on=False)
-    g.ax_marg_x.text(px_avg, 1.06, "Avg\nvalue", transform=bx, ha='center', va='bottom', fontsize=9.5,
+    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=9.5,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
-    g.ax_marg_y.text(1.1, py_avg, "Avg\nvalue", transform=by, ha='left', va='center', fontsize=9.5,
+    g.ax_marg_y.text(1.1, py_avg, "Init (t=0): \nAvg train value", transform=by, ha='left', va='center', fontsize=9.5,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
 
     try:
@@ -380,6 +617,12 @@ def plot_embedding_distribution_comp(
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
     except:
         pass
+
+    for c_idx, u in enumerate(users_sel):
+        xs = [px_avg,test_emb_np[0, u, i]]
+        ys = [py_avg,test_emb_np[0, u, j]]
+
+        ax.plot(xs, ys, color="black", zorder=1)
 
     # --- guides at the exact final point for each selected student (joint + marginals) ---
     for c_idx, u in enumerate(users_sel):
