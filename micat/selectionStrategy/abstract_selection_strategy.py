@@ -295,7 +295,7 @@ class AbstractSelectionStrategy(ABC):
 
         self.weights = self.L_W.compute_weights(torch.stack([L1, L3]))
 
-        updated_users_emb = learning_users_emb -   P1 *(grads_L1[0] ) - P3 *grads_L3[0] 
+        updated_users_emb = learning_users_emb -   P1 *(grads_L1[0] ) - P3 *grads_L3[0]
 
         return updated_users_emb
     
@@ -1200,6 +1200,123 @@ class AbstractSelectionStrategy(ABC):
         :param seed: new seed
         """
         self._rng = torch.Generator(device=self.config['device']).manual_seed(self.config['seed'])
+
+    @evaluation_state
+    def evaluate_test_get_profile(self, test_dataset: dataset.EvalDataset,train_dataset: dataset.EvalDataset,valid_dataset: dataset.EvalDataset):
+        """CATDataset
+        Evaluate the model on the given data using the given metrics.
+        """
+        logging.debug("-- Evaluate test --")
+
+        # Device cleanup
+        torch.cuda.empty_cache()
+        logging.info('train on {}'.format(self.config['device']))
+
+        # Users embeddings initialization
+        mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean.squeeze(0), covariance_matrix=self.CDM.model.cov_matrix)
+        learning_users_emb = nn.Parameter(mvn.sample((self.CDM.model.users_emb.weight.shape[0],)).requires_grad_(True))
+
+        # Initialize testing config
+        match self.config['meta_trainer']:
+            case 'GAP':
+                #mvn = torch.distributions.MultivariateNormal(loc=self.CDM.model.prior_mean, covariance_matrix=self.CDM.model.cov_matrix)
+                #learning_users_emb = nn.Parameter(mvn.sample((test_dataset.n_users,)).squeeze(-2).requires_grad_(True))
+                learning_users_emb = nn.Parameter(torch.tile(self.learning_users_emb, (self.metadata["num_user_id"], 1)).to(self.config['device']).requires_grad_(True))
+            case 'BETA-CD':
+                lambda_mean = nn.Parameter(torch.tile(self.user_mean, (self.metadata["num_user_id"], 1)).requires_grad_(True))
+                lambda_std = nn.Parameter(torch.tile(self.user_log_std, (self.metadata["num_user_id"], 1)).requires_grad_(True))
+                learning_users_emb = [lambda_mean, lambda_std]
+            case 'MAML':
+                learning_users_emb = nn.Parameter(torch.tile(self.learning_users_emb, (self.metadata["num_user_id"], 1)).to(self.config['device']).requires_grad_(True))
+            case 'Approx_GAP':
+                self.user_params_optimizer = torch.optim.Adam(
+                    [learning_users_emb],
+                    lr=self.config['inner_user_lr']
+                )
+            case 'Adam':
+                self.user_params_optimizer = torch.optim.Adam(
+                    [learning_users_emb],
+                    lr=self.config['inner_user_lr']
+                )
+            case 'none':
+                pass
+            case _:
+                raise ValueError(f"Unknown meta trainer: {self.config['meta_trainer']}")
+
+
+        # Updating CDM to test dataset
+        self.CDM.init_test(test_dataset)
+
+        # Dataloaders preperation
+        test_dataset.split_query_meta(self.config['seed'])
+        test_query_env = QueryEnv(test_dataset, self.config['valid_batch_size'])
+        test_loader = data.DataLoader(test_dataset, collate_fn=dataset.UserCollate(test_query_env), batch_size=self.config['valid_batch_size'],
+                                      shuffle=False, pin_memory=self.config['pin_memory'], num_workers=self.config['num_workers'])
+
+        # Saving metric structures
+        pred_list = {t : [] for t in range(self.config['n_query'])}
+        label_list = {t : [] for t in range(self.config['n_query'])}
+        nb_modalities_list = {t : [] for t in range(self.config['n_query'])}
+        emb_tensor = torch.zeros(size = (self.config['n_query'],test_dataset.n_users, test_dataset.n_categories), device=self.device)
+
+        # Test
+        log_idx = 0
+        for batch in test_loader:
+
+            test_query_env.load_batch(batch)
+
+            # Prepare the meta set
+            meta_data = test_query_env.generate_meta()
+            nb_modalities = test_dataset.nb_modalities[meta_data['questions_id']]
+
+            for i_query in tqdm(range(self.config['n_query']), total=self.config['n_query'], disable=self.config['disable_tqdm']):
+
+                # Select the action (question to submit)
+                options = test_query_env.get_query_options(i_query)
+                actions = self.select_action(options)
+                test_query_env.update(actions, i_query)
+
+                learning_users_emb = self.inner_loop(test_query_env.feed_sub(),learning_users_emb)
+
+                if self.config['meta_trainer'] == 'BETA-CD':
+                    with torch.no_grad() :
+                        preds = torch.zeros(size=(meta_data['users_id'].shape[0],), device=self.device)
+                        q_params = learning_users_emb
+                        for _ in range(self.num_sample):
+                            users_emb = q_params[0] + torch.randn_like(q_params[0], device=q_params[0].device) * torch.exp(q_params[1])
+                            preds += self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=users_emb)
+                        preds /= self.num_sample
+                else:
+                    with torch.no_grad() :
+                        preds = self.CDM.forward(users_id=meta_data['users_id'], items_id=meta_data['questions_id'], concepts_id=meta_data['categories_id'], users_emb=learning_users_emb)
+
+                pred_list[i_query].append(preds)
+                label_list[i_query].append(meta_data['labels'])
+                nb_modalities_list[i_query].append(nb_modalities)
+
+                if self.config['meta_trainer'] == 'BETA-CD':
+                    # Store the updated user embeddings
+                    emb_tensor[i_query, :, :] = q_params[0]
+                else:
+                    emb_tensor[i_query, :, :] = learning_users_emb
+
+            log_idx += test_query_env.current_batch_size
+
+        # Compute metrics in one pass using a dictionary comprehension
+        results_pred = {t : {metric: self.pred_metric_functions[metric](torch.cat(pred_list[t]), torch.cat(label_list[t]), torch.cat(nb_modalities_list[t])).cpu().item()
+                   for metric in self.pred_metrics} for t in range(self.config['n_query'])}
+
+        results_profiles = {
+            t: {
+                metric: self.profile_metric_functions[metric](emb_tensor[t,:, :], test_dataset, train_dataset, valid_dataset)
+                for metric in self.profile_metrics
+            }
+            for t in range(self.config["n_query"])
+        }
+
+        
+
+        return results_pred, results_profiles, emb_tensor, [test_query_env._sub_user_ids,test_query_env._sub_question_ids,test_query_env._sub_nb_modalities,test_query_env._sub_labels,test_query_env._sub_category_ids]
 
     @evaluation_state
     def evaluate_cdm_base(self, test_dataset: dataset.EvalDataset,train_dataset: dataset.EvalDataset,valid_dataset: dataset.EvalDataset):
