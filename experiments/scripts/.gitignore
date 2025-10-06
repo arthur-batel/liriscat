@@ -1,3 +1,4 @@
 ./logs/
 ./logs_2/
 ./logs_ablation/
+./result_curves/*
