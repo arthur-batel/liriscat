@@ -19,4 +19,5 @@ micat.egg-info/
 *.ipynb_checkpoints
 experiments/notebook_example/tmp5r7m6idd
 experiments/notebook_example/tmp55966wlr
+experiments/scripts/results_curves/
 
