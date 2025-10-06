@@ -239,97 +239,83 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.cm import ScalarMappable
-
+import numpy as np
+import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.cm import ScalarMappable
+from matplotlib.transforms import blended_transform_factory as _bt
+from sklearn.neighbors import KernelDensity
 
 def plot_embedding_distribution_flow(
-    i, j,
-    t_np,                # background embeddings: shape (Tb, D)
-    test_emb,            # time-evolving cohort: shape (T, N, D)
-    *,
-    bins=50,
-    xlim=None, ylim=None,
-    test_data=None, train_emb=None,  # (kept for API compatibility; unused)
-    flow_bins=30, min_count=3, stream_density=1.2,
-    overlay_time_idx=-1, overlay_color="C2", overlay_label="final-step",
-    add_colorbar=True, flow_anchor="end"
+    i, j, t_np, test_emb, bins=50, xlim=None, ylim=None, test_data=None, train_emb=None,
+    step_to_show=15,flow_anchor="end",flow_bins=30,min_count=3, stream_density=1.2,
+    overlay_time_idx=-1, overlay_color="C2", overlay_label="test profile distrib.\n (t=15)",
+    add_colorbar=True
 ):
-    """
-    Joint KDE of background embeddings on dims (i, j), overlaid with a temporal flow field
-    computed from test_emb trajectories; plus overlay of the selected time index marginals.
-    Marginal axes are kept on the SAME density scales between background and overlay.
+    skills = {
+        1: "Property of inequality", 2: "Methods of data sampling",
+        3: "Geometric progression", 4: "Function versus equation",
+        5: "Solving triangle", 6: "Principles of data analysis",
+        7: "Classical probability theory", 8: "Linear programming",
+        9: "Definitions of algorithm", 10: "Algorithm logic",
+        11: "Arithmetic progression", 12: "Spatial imagination",
+        13: "Abstract summarization", 14: "Reasoning and demonstration",
+        15: "Calculation", 16: "Data handling"
+    }
 
-    Parameters
-    ----------
-    i, j : int
-        Indices of the two embedding dimensions to visualize.
-    t_np : array-like, shape (Tb, D)
-        Background points used for the black KDE in the joint plot and marginals.
-    test_emb : array-like or torch.Tensor, shape (T, N, D)
-        Time series of embeddings; flow is computed from consecutive steps.
-    bins : int
-        Unused here (kept for API compatibility).
-    xlim, ylim : tuple or None
-        Axis limits for joint (and synchronized to marginals). If None, inferred.
-    flow_bins : int
-        Number of 2D bins for averaging local flow vectors.
-    min_count : int
-        Minimum count per bin to render a vector.
-    stream_density : float
-        Streamplot density parameter.
-    overlay_time_idx : int
-        Time index to overlay on the marginals (supports negatives, e.g. -1 for last).
-    overlay_color : str
-        Color for the overlay marginal KDEs.
-    overlay_label : str
-        Label to show in the legend for the overlay marginals.
-    add_colorbar : bool
-        Whether to add a colorbar encoding mean time index per bin in the streamplot.
-    flow_anchor : {"start","end","mid"}
-        Where to anchor the flow vectors (start = (X0, Y0), end = (X1, Y1), mid = midpoint).
-    """
-
-    # --- Prepare inputs ---
-    if isinstance(test_emb, torch.Tensor):
-        test_emb = test_emb.detach().cpu().numpy()
-    t_np = np.asarray(t_np)
-
-    # Background data on the selected dims
+    # --- background KDE from t_np ---
+    t_np = t_np.detach().cpu().numpy() if isinstance(t_np, torch.Tensor) else np.asarray(t_np)
     x_bg, y_bg = t_np[:, i], t_np[:, j]
+    g = sns.jointplot(x=x_bg, y=y_bg, kind="kde", fill=False, color="black", levels=8)
+    ax = g.ax_joint
+    if xlim is not None: ax.set_xlim(xlim)
+    if ylim is not None: ax.set_ylim(ylim)
 
-    # --- Define colormap locally ---
-    _cmap_rg = LinearSegmentedColormap.from_list(
-        "rg_no_yellow", [(0.0, "#d73027"), (1.0, "#1a9850")]
-    )
+    # freeze limits then compute borders
+    x0, x1 = ax.get_xlim(); y0, y1 = ax.get_ylim()
+    ax.set_autoscale_on(False)
 
-    # --- Base joint KDE plot from background points ---
-    g = sns.jointplot(
-        x=x_bg, y=y_bg, kind="kde",
-        fill=False, color="black", levels=8, ratio=2
-    )
+    # --- global averages (joint + marginals) ---
+    px_avg = float(np.nanmean(t_np[:, i]))
+    py_avg = float(np.nanmean(t_np[:, j]))
+    ax.vlines(px_avg, py_avg, y1, linestyles=':', color='black', alpha=0.6, zorder=1)
+    ax.scatter(px_avg, py_avg, s=15, color='black', zorder=2)
 
-    # Set (and then read back) authoritative joint limits
+    bx = _bt(g.ax_marg_x.transData, g.ax_marg_x.transAxes)   # x in data, y in axes
+    by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)   # x in axes, y in data
+    g.ax_marg_x.plot([px_avg, px_avg], [0, 1], transform=bx, linestyle=':', color='black', alpha=0.6, clip_on=False)
+    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=9.5,
+                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
+
+
+    try:
+        perf_x_avg = ecdf_percentiles(train_emb, i, px_avg)
+        perf_y_avg = ecdf_percentiles(train_emb, j, py_avg)
+        g.ax_marg_x.text(px_avg, 0.4, f"{perf_x_avg}%", transform=bx, ha='center', va='bottom', fontsize=9.5,
+                         bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
+
+    except:
+        pass
+
+    # Authoritative limits from the joint, then sync to marginals
     if xlim is not None:
         g.ax_joint.set_xlim(xlim)
     if ylim is not None:
         g.ax_joint.set_ylim(ylim)
     xlim = g.ax_joint.get_xlim()
     ylim = g.ax_joint.get_ylim()
-
-    # Synchronize variable ranges to marginals
-    # (x-marginal: variable is x -> set xlim; y-marginal: variable is y -> set ylim)
     g.ax_marg_x.set_xlim(xlim)
     g.ax_marg_y.set_ylim(ylim)
 
-    # Lock current density scale limits of the marginals BEFORE overlay,
-    # so adding overlay curves won't rescale them.
-    marg_x_ylim = g.ax_marg_x.get_ylim()  # density range on x-marginal (y-axis)
-    marg_y_xlim = g.ax_marg_y.get_xlim()  # density range on y-marginal (x-axis)
+    # >>> ADD THIS LINE <<<
+    test_emb = test_emb.detach().cpu().numpy() if isinstance(test_emb, torch.Tensor) else np.asarray(test_emb)
 
-    # --- Flow computation from test_emb on dims (i, j) ---
+
     T, N, D = test_emb.shape
     Xt, Yt = test_emb[:, :, i], test_emb[:, :, j]
 
-    # Differences over time
     dX, dY = Xt[1:] - Xt[:-1], Yt[1:] - Yt[:-1]
     X0, Y0, X1, Y1 = Xt[:-1], Yt[:-1], Xt[1:], Yt[1:]
 
@@ -337,17 +323,15 @@ def plot_embedding_distribution_flow(
         Xa, Ya = X0, Y0
     elif flow_anchor == "end":
         Xa, Ya = X1, Y1
-    else:  # "mid"
+    else:
         Xa, Ya = 0.5 * (X0 + X1), 0.5 * (Y0 + Y1)
 
-    # Flatten everything (T-1, N) -> ((T-1)*N,)
     step_ids = np.repeat(np.arange(1, T)[:, None], N, axis=1).reshape(-1)
     Xa_f = Xa.reshape(-1)
     Ya_f = Ya.reshape(-1)
     dX_f = dX.reshape(-1)
     dY_f = dY.reshape(-1)
 
-    # Filter valid points inside joint limits and finite values
     m = (
         np.isfinite(Xa_f) & np.isfinite(Ya_f) &
         np.isfinite(dX_f) & np.isfinite(dY_f) &
@@ -356,7 +340,6 @@ def plot_embedding_distribution_flow(
     )
     Xa_f, Ya_f, dX_f, dY_f, step_ids = Xa_f[m], Ya_f[m], dX_f[m], dY_f[m], step_ids[m]
 
-    # --- Bin & aggregate vectors ---
     x_edges = np.linspace(xlim[0], xlim[1], int(flow_bins) + 1)
     y_edges = np.linspace(ylim[0], ylim[1], int(flow_bins) + 1)
     Xc, Yc = np.meshgrid(
@@ -368,7 +351,6 @@ def plot_embedding_distribution_flow(
     C = np.zeros_like(Xc, dtype=int)
     Tval = np.zeros_like(Xc, dtype=float)
 
-    have_vectors = False
     if Xa_f.size > 0:
         xi = np.clip(np.digitize(Xa_f, x_edges) - 1, 0, len(x_edges) - 2)
         yi = np.clip(np.digitize(Ya_f, y_edges) - 1, 0, len(y_edges) - 2)
@@ -381,19 +363,16 @@ def plot_embedding_distribution_flow(
 
         valid = C >= min_count
         if np.any(valid):
-            have_vectors = True
             U_plot = np.where(valid, U / np.maximum(C, 1), 0.0)
             V_plot = np.where(valid, V / np.maximum(C, 1), 0.0)
             T_plot = np.where(valid, Tval / np.maximum(C, 1), np.nan)
 
-            # Normalize mean time for coloring; robust to equal tmin==tmax or NaNs
             tmin, tmax = np.nanmin(T_plot), np.nanmax(T_plot)
             if np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
                 norm_values = (T_plot - tmin) / (tmax - tmin)
             else:
                 norm_values = np.zeros_like(T_plot)
 
-            # Streamplot
             g.ax_joint.streamplot(
                 Xc, Yc, U_plot, V_plot,
                 density=stream_density,
@@ -401,48 +380,198 @@ def plot_embedding_distribution_flow(
                 linewidth=1.5, arrowsize=1.5
             )
 
-            # Optional colorbar
+            from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
+        if add_colorbar and np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
+            # Create the ScalarMappable for the same normalization and cmap
+            sm = ScalarMappable(Normalize(vmin=tmin, vmax=tmax), cmap=_cmap_rg)
+            sm.set_array([])
+        
+            # --- Reserve a right gutter totally outside the JointGrid ---
+            fig = g.fig  # seaborn JointGrid figure
+            sp = fig.subplotpars
+        
+            # Shrink the grid to make room on the far right (no overlap with y-marginal)
+            # 0.86 means the JointGrid uses 86% of the figure width; the remaining 14% is free.
+            fig.subplots_adjust(right=0.86)
+        
+            # Add a dedicated colorbar axes in that free right gutter.
+            # Align vertically with the JointGrid: from sp.bottom to sp.top.
+            cax_left = 1.0# must be > the 'right' value above; tweak if needed
+            cax_width = 0.03  # thickness of the colorbar
+            cax = fig.add_axes([cax_left, sp.bottom+ (sp.top - sp.bottom)*0.05, cax_width, (sp.top - sp.bottom)*0.8])
+        
+            cb = fig.colorbar(sm, cax=cax)
+        
+            lo = int(np.ceil(tmin))
+            hi = int(np.floor(tmax))
+            ticks = [lo] if hi <= lo else np.linspace(lo, hi, num=min(6, hi - lo + 1), dtype=int)
+            cb.set_ticks(ticks)
+            cb.set_label("Number of submitted questions (t)")
+
+
+
+
+    # labels + legend (original style)
+    cat_i, cat_j = skills[i + 1], skills[j + 1]
+    g.set_axis_labels(f'Profile dimension {i}:\n math category "{cat_i}"',
+                      f'Profile dimension {j}: \nmath category "{cat_j}"', fontsize=11)
+
+    plt.tight_layout()
+    plt.legend(framealpha=1)
+    plt.savefig(f"../data/students_comp{i}{j}.png", dpi=400, bbox_inches="tight")
+    plt.show()
+
+
+
+def plot_embedding_distribution_flow2(
+    i, j,
+    t_np,
+    test_emb,
+    *,
+    bins=50,
+    xlim=None, ylim=None,
+    test_data=None, train_emb=None,
+    flow_bins=30, min_count=3, stream_density=1.2,
+    overlay_time_idx=-1, overlay_color="C2", overlay_label="test profile distrib.\n (t=15)",
+    add_colorbar=True, flow_anchor="end"
+):
+    import numpy as np
+    import torch
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap, Normalize
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.transforms import blended_transform_factory as _bt
+    from sklearn.neighbors import KernelDensity
+
+    if isinstance(test_emb, torch.Tensor):
+        test_emb = test_emb.detach().cpu().numpy()
+    t_np = np.asarray(t_np)
+
+    x_bg, y_bg = t_np[:, i], t_np[:, j]
+
+    _cmap_rg = LinearSegmentedColormap.from_list(
+        "rg_no_yellow", [(0.0, "#d73027"), (1.0, "#1a9850")]
+    )
+
+    g = sns.jointplot(x=x_bg, y=y_bg, kind="kde", fill=False, color="black", levels=8)
+
+    # Authoritative limits from the joint, then sync to marginals
+    if xlim is not None:
+        g.ax_joint.set_xlim(xlim)
+    if ylim is not None:
+        g.ax_joint.set_ylim(ylim)
+    xlim = g.ax_joint.get_xlim()
+    ylim = g.ax_joint.get_ylim()
+    g.ax_marg_x.set_xlim(xlim)
+    g.ax_marg_y.set_ylim(ylim)
+
+    T, N, D = test_emb.shape
+    Xt, Yt = test_emb[:, :, i], test_emb[:, :, j]
+
+    dX, dY = Xt[1:] - Xt[:-1], Yt[1:] - Yt[:-1]
+    X0, Y0, X1, Y1 = Xt[:-1], Yt[:-1], Xt[1:], Yt[1:]
+
+    if flow_anchor == "start":
+        Xa, Ya = X0, Y0
+    elif flow_anchor == "end":
+        Xa, Ya = X1, Y1
+    else:
+        Xa, Ya = 0.5 * (X0 + X1), 0.5 * (Y0 + Y1)
+
+    step_ids = np.repeat(np.arange(1, T)[:, None], N, axis=1).reshape(-1)
+    Xa_f = Xa.reshape(-1)
+    Ya_f = Ya.reshape(-1)
+    dX_f = dX.reshape(-1)
+    dY_f = dY.reshape(-1)
+
+    m = (
+        np.isfinite(Xa_f) & np.isfinite(Ya_f) &
+        np.isfinite(dX_f) & np.isfinite(dY_f) &
+        (Xa_f >= xlim[0]) & (Xa_f <= xlim[1]) &
+        (Ya_f >= ylim[0]) & (Ya_f <= ylim[1])
+    )
+    Xa_f, Ya_f, dX_f, dY_f, step_ids = Xa_f[m], Ya_f[m], dX_f[m], dY_f[m], step_ids[m]
+
+    x_edges = np.linspace(xlim[0], xlim[1], int(flow_bins) + 1)
+    y_edges = np.linspace(ylim[0], ylim[1], int(flow_bins) + 1)
+    Xc, Yc = np.meshgrid(
+        0.5 * (x_edges[:-1] + x_edges[1:]),
+        0.5 * (y_edges[:-1] + y_edges[1:])
+    )
+    U = np.zeros_like(Xc)
+    V = np.zeros_like(Yc)
+    C = np.zeros_like(Xc, dtype=int)
+    Tval = np.zeros_like(Xc, dtype=float)
+
+    if Xa_f.size > 0:
+        xi = np.clip(np.digitize(Xa_f, x_edges) - 1, 0, len(x_edges) - 2)
+        yi = np.clip(np.digitize(Ya_f, y_edges) - 1, 0, len(y_edges) - 2)
+        for k in range(Xa_f.size):
+            r, c = yi[k], xi[k]
+            U[r, c] += dX_f[k]
+            V[r, c] += dY_f[k]
+            C[r, c] += 1
+            Tval[r, c] += step_ids[k]
+
+        valid = C >= min_count
+        if np.any(valid):
+            U_plot = np.where(valid, U / np.maximum(C, 1), 0.0)
+            V_plot = np.where(valid, V / np.maximum(C, 1), 0.0)
+            T_plot = np.where(valid, Tval / np.maximum(C, 1), np.nan)
+
+            tmin, tmax = np.nanmin(T_plot), np.nanmax(T_plot)
+            if np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
+                norm_values = (T_plot - tmin) / (tmax - tmin)
+            else:
+                norm_values = np.zeros_like(T_plot)
+
+            g.ax_joint.streamplot(
+                Xc, Yc, U_plot, V_plot,
+                density=stream_density,
+                color=norm_values, cmap=_cmap_rg,
+                linewidth=1.5, arrowsize=1.5
+            )
+
             if add_colorbar and np.isfinite(tmin) and np.isfinite(tmax) and (tmax > tmin):
                 sm = ScalarMappable(Normalize(vmin=tmin, vmax=tmax), cmap=_cmap_rg)
                 sm.set_array([])
                 cb = g.figure.colorbar(sm, ax=g.ax_joint, fraction=0.046, pad=0.04)
-                # integer-ish ticks over [tmin, tmax]
                 lo = int(np.ceil(tmin))
                 hi = int(np.floor(tmax))
-                if hi <= lo:
-                    ticks = [lo]
-                else:
-                    ticks = np.linspace(lo, hi, num=min(6, hi - lo + 1), dtype=int)
+                ticks = [lo] if hi <= lo else np.linspace(lo, hi, num=min(6, hi - lo + 1), dtype=int)
                 cb.set_ticks(ticks)
-                cb.set_label("Mean time index in bin (t)")
+                cb.set_label("Number of submitted questions (t)")
 
-    # --- Overlay KDE for selected time on marginals (with locked scales) ---
-    # Determine the time index (support negatives)
     t_sel = max(0, min(T - 1, overlay_time_idx if overlay_time_idx >= 0 else (T + overlay_time_idx)))
     x_last = Xt[t_sel]
     y_last = Yt[t_sel]
     x_last = x_last[np.isfinite(x_last)]
     y_last = y_last[np.isfinite(y_last)]
 
-    # Draw overlay marginals, clipped to variable ranges; keep density-limits unchanged
-    if x_last.size > 1:
-        sns.kdeplot(x=x_last, ax=g.ax_marg_x, fill=False, color=overlay_color, lw=1.8, clip=xlim)
-    if y_last.size > 1:
-        sns.kdeplot(y=y_last, ax=g.ax_marg_y, fill=False, color=overlay_color, lw=1.8, clip=ylim)
+    # Blended transforms for marginals (x=data, y=axes) and (x=axes, y=data)
+    bx = _bt(g.ax_marg_x.transData, g.ax_marg_x.transAxes)
+    by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)
 
-    # Restore density scales for the marginals so both background and overlay share identical scales
-    g.ax_marg_x.set_ylim(marg_x_ylim)
-    g.ax_marg_y.set_xlim(marg_y_xlim)
+    px_avg = float(np.nanmean(t_np[:, i]))
+    py_avg = float(np.nanmean(t_np[:, j]))
+    g.ax_joint.scatter(px_avg, py_avg, s=15, color="black", zorder=2)
+    g.ax_joint.plot([px_avg, px_avg], [py_avg, ylim[1]], linestyle=':', color='black', alpha=0.75, zorder=1)
 
-    # Optional legend on the x-marginal
-    if getattr(g.ax_marg_x, 'legend_', None) is None and (x_last.size > 1 or y_last.size > 1):
-        g.ax_marg_x.legend(
-            ["train profile distrib.", f"{overlay_label} (t={t_sel})"],
-            loc='upper right', bbox_to_anchor=(1.2, 0.8),
-            frameon=False, fontsize=9.5
-        )
+    # Works now: data x, axes y (can extend above 1.0)
+    g.ax_marg_x.plot([px_avg, px_avg], [0.0, 1.1], linestyle=':', transform=bx,
+                     color='black', alpha=0.75, clip_on=False)
+    g.ax_marg_x.text(px_avg, 1.1, "Init (t=0): \nAvg train value", transform=bx,
+                     ha='center', va='bottom', fontsize=9.5,
+                     bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
-    # --- Labels and layout ---
+    def _bandwidth_scott(z):
+        n = max(1, z.size)
+        s = np.nanstd(z, ddof=1) if n > 1 else 1.0
+        return max(1e-3 * (np.nanmax(z) - np.nanmin(z) + 1e-9), s * (n ** (-1/5)))
+
     skills = {
         1: "Property of inequality", 2: "Methods of data sampling",
         3: "Geometric progression", 4: "Function versus equation",
