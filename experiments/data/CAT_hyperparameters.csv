@@ -41,4 +41,4 @@ MAML; assist0910; meta_lr = 0.05, inner_user_lr = 0.01
 
 MICAT; Algebra; meta_lr = 1.0, learning_users_emb_lr = 0.0001
 MICAT; math2; meta_lr = 2.0,learning_users_emb_lr = 0.0001
-MICAT;Assist0910; meta_lr = 0.001,learning_users_emb_lr = 0.001
+MICAT;Assist0910; meta_lr = 3.0,learning_users_emb_lr = 0.001
