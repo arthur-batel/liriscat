@@ -11,7 +11,7 @@ Beta-CD;assist0910;{'meta_lr': 0.005, 'kl_weight': 0.0001}
 
 MAML; algebra;{'meta_lr': 0.05, 'inner_user_lr': 0.01}
 MAML; math2; meta_lr = 0.01, inner_user_lr = 0.005
-MAML; assist0910; {'meta_lr': 0.05, 'inner_user_lr': 0.01}
+MAML; assist0910; {'meta_lr': 2.0, 'inner_user_lr': 0.01}
 
 Approx_GAP; algebra; 'meta_lr':1.0
 Approx_GAP; math2; meta_lr = 2.0
