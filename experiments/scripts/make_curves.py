@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 import os, re, csv, sys, argparse, math, glob
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle  # <-- NEW
+from matplotlib.patches import Rectangle
 
-# ---------------- Existing metadata ----------------
+# ---------------- Metadata ----------------
 METHOD_ORDER = ["naive", "maml", "approxgap", "betacd", "method"]
 METHOD_LABELS = {
     "naive": r"\naive", "maml": r"\maml", "approxgap": r"\approxgap",
     "betacd": r"\betacd", "method": r"\method",
 }
 META_TRAINER_TO_METHOD = {
-    "adam":"naive","sgd":"naive","naive":"naive",
-    "maml":"maml",
-    "approx_gap":"approxgap","approx-gap":"approxgap","approxgap":"approxgap",
-    "beta_cd":"betacd","beta-cd":"betacd","betacd":"betacd",
-    "micat":"method",
+    "adam": "naive", "sgd": "naive", "naive": "naive",
+    "maml": "maml",
+    "approx_gap": "approxgap", "approx-gap": "approxgap", "approxgap": "approxgap",
+    "beta_cd": "betacd", "beta-cd": "betacd", "betacd": "betacd",
+    "micat": "method",
 }
-CDM_LABELS = {"ncdm":"NCDM","impact":"CD-BPR","cd-bpr":"CD-BPR","cdbpr":"CD-BPR"}
-DATASET_LABELS = {"algebra":r"\algebra{}","math2":"Math2","assist0910":r"\assist{}","assist":r"\assist{}"}
-DATASET_ORDER = ["algebra","math2","assist0910"]
+CDM_LABELS = {"ncdm": "NCDM", "impact": "CD-BPR", "cd-bpr": "CD-BPR", "cdbpr": "CD-BPR"}
+DATASET_LABELS = {"algebra": "Algebra", "math2": "Math2", "assist0910": "Assist0910", "assist": "Assist0910"}
+DATASET_ORDER = ["algebra", "math2", "assist0910"]
 
-# --- Filename parsing (robust) ---
+# Metrics typically minimized (others are maximized by default)
+DEFAULT_MINIMIZE = {"rmse", "mae", "pc-er"}
+
+# --- Filename parsing ---
 FNAME_RE = re.compile(
     r"^CAT_launch_(?P<dataset>[^_]+)_(?P<cdm>[^_]+)_(?P<meta>.+)_(?P<exp>\d+)_metrics_summary\.csv$",
     re.IGNORECASE,
@@ -35,10 +38,9 @@ def parse_filename(path):
     if m:
         d = m.groupdict()
         return d["dataset"], d["cdm"], d["meta"], d["exp"]
-    # Fallback
     parts = name.split("_")
-    if len(parts) >= 6 and name.endswith("_metrics_summary.csv") and parts[0]=="CAT" and parts[1]=="launch":
-        dataset = parts[2]; cdm = parts[3]; meta = "_".join(parts[4:-2]); exp  = parts[-2]
+    if len(parts) >= 6 and name.endswith("_metrics_summary.csv") and parts[0] == "CAT" and parts[1] == "launch":
+        dataset = parts[2]; cdm = parts[3]; meta = "_".join(parts[4:-2]); exp = parts[-2]
         if exp.isdigit():
             return dataset, cdm, meta, exp
     return None
@@ -72,11 +74,6 @@ def load_csv(path):
 
 # ---------- Load & aggregate ----------
 def build_results(dirpath, target_metric=None, verbose=True):
-    """
-    results[dataset_key]['_label'] = display_name
-    results[dataset_key]['steps'] = sorted_steps
-    results[dataset_key]['cells'][(step, method_key, cdm_label)] = {metric: (mean,std), ...}
-    """
     results = {}
     metrics_seen = set()
     files = glob.glob(os.path.join(dirpath, "CAT_launch_*_*_*_*_metrics_summary.csv"))
@@ -148,158 +145,241 @@ def build_results(dirpath, target_metric=None, verbose=True):
             d["steps"] = sorted(list(d["steps"]))
     return results, metrics_seen
 
-# ---------- Plotting: mean(metric_y) vs mean(metric_x) ----------
-def plot_metric_vs_metric(results,
-                          metric_x: str,
-                          metric_y: str,
-                          outdir: str,
-                          formats=("png",),
-                          show=False,
-                          quiet=False):
-    """
-    For each dataset in `results`, produce a figure with:
-        x: mean(metric_x)
-        y: mean(metric_y)
-    One curve per (method, cdm), points ordered by step and connected.
-    Additionally, draw rectangular error boxes (±std in both metrics) at the
-    initial and final steps of each curve.
-    """
-    os.makedirs(outdir, exist_ok=True)
+# ---------- Pareto front utilities ----------
+def pareto_front_indices(points, minimize_x=False, minimize_y=False):
+    if len(points) == 0:
+        return set()
+    xf = np.array([(-p[0] if minimize_x else p[0]) for p in points], dtype=float)
+    yf = np.array([(-p[1] if minimize_y else p[1]) for p in points], dtype=float)
+    n = len(points)
+    on_front = np.ones(n, dtype=bool)
+    for i in range(n):
+        if not on_front[i]:
+            continue
+        for j in range(n):
+            if i == j:
+                continue
+            if (xf[j] >= xf[i] and yf[j] >= yf[i]) and (xf[j] > xf[i] or yf[j] > yf[i]):
+                on_front[i] = False
+                break
+    return {i for i, v in enumerate(on_front) if v}
 
-    # Styling: color per METHOD, marker/linestyle per CDM
+def objective_direction(metric_name):
+    return (metric_name or "").strip().lower() in DEFAULT_MINIMIZE
+
+# ---------- Plotting (write two files per dataset) ----------
+def _draw_one_figure(dskey, ds, metric_x, metric_y, pairs_used, outpath, formats, quiet):
+    """
+    Colors & markers per your TikZ spec:
+      Simple-CAT -> blue, asterisk (*)
+      MAML       -> orange, circle (o)
+      Approx-GAP -> green, triangle (^)
+      BETA-CD    -> brown, diamond (D)
+      MICAT      -> red, square (s)
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch, Rectangle
+
+    steps_sorted = ds["steps"]
+    cells = ds["cells"]
+
+    # ----- COLORS (Matplotlib "Tableau" defaults) -----
     method_colors = OrderedDict({
-        "naive":  "#1f77b4",
-        "maml":   "#ff7f0e",
-        "approxgap": "#2ca02c",
-        "betacd": "#d62728",
-        "method": "#9467bd",
+        "naive":    "#1f77b4",  # mplBlue
+        "maml":     "#ff7f0e",  # mplOrange
+        "approxgap":"#2ca02c",  # mplGreen
+        "betacd":   "#8c564b",  # mplBrown
+        "method":   "#d62728",  # mplRed
     })
-    default_colors = ["#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
 
-    cdm_markers = OrderedDict({"NCDM": "o", "CD-BPR": "o"})
-    cdm_linestyles = OrderedDict({"NCDM": "-", "CD-BPR": "-"})
+    # ----- MARKERS (to match TikZ marks) -----
+    method_markers = {
+        "naive":    "o",  # asterisk
+        "maml":     "o",  # filled circle
+        "approxgap":"o",  # filled triangle up
+        "betacd":   "o",  # filled diamond
+        "method":   "o",  # filled square
+    }
 
+    # (CDM styles kept but we won't use their markers; we use per-method markers)
+    cdm_linestyles = {"NCDM": "-", "CD-BPR": "-"}
+
+    min_x = objective_direction(metric_x)
+    min_y = objective_direction(metric_y)
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.6), constrained_layout=False)
+    drawn = 0
+    series = []
+
+    # Collect data per series
+    for (method, cdm) in pairs_used:
+        xs, ys, xsd, ysd, steps_vec = [], [], [], [], []
+        for st in steps_sorted:
+            key = (st, method, cdm)
+            if key not in cells:
+                continue
+            metric_dict = cells[key]
+            if (metric_x not in metric_dict) or (metric_y not in metric_dict):
+                continue
+            mx, sx = metric_dict[metric_x]
+            my, sy = metric_dict[metric_y]
+            if not all(map(math.isfinite, [mx, my, sx, sy])):
+                continue
+            xs.append(mx); ys.append(my); xsd.append(sx); ysd.append(sy); steps_vec.append(st)
+        if len(xs) == 0:
+            continue
+
+        color = method_colors.get(method, "#333333")
+        marker = method_markers.get(method, "o")       # <-- use per-method marker
+        ls = cdm_linestyles.get(cdm, "-")
+        series.append({
+            "method": method, "cdm": cdm, "color": color, "ls": ls, "marker": marker,
+            "xs": np.asarray(xs), "ys": np.asarray(ys),
+            "xsd": np.asarray(xsd), "ysd": np.asarray(ysd),
+            "steps": np.asarray(steps_vec, int),
+        })
+        drawn += 1
+
+    # Draw colored lines (no markers on the line itself, like your script)
+    for s in series:
+        ax.plot(s["xs"], s["ys"], linestyle=s["ls"], color=s["color"],
+                label=f"Avg {METHOD_CONV.get(s['method'], s['method'].upper())}", alpha=1.0)
+
+    # Error rectangles (unchanged)
+    for s in series:
+        if s["xs"].size > 1:
+            mx, my, sx, sy = s["xs"][-1], s["ys"][-1], s["xsd"][-1], s["ysd"][-1]
+            if all(map(math.isfinite, [mx, my, sx, sy])):
+                rect = Rectangle((mx - sx, my - sy), 2*sx, 2*sy,
+                                 facecolor=s["color"], edgecolor=s["color"], lw=1.0, alpha=0.15)
+                ax.add_patch(rect)
+
+    # Annotations (unchanged)
+    for s in series:
+        if s["xs"].size >= 1:
+            ax.annotate(f"{1}", (s["xs"][0], s["ys"][0]), xytext=(4, 4),
+                        textcoords="offset points", fontsize=10)
+        if s["xs"].size >= 2:
+            ax.annotate(f"{s['steps'][-1] + 1}", (s["xs"][-1], s["ys"][-1]),
+                        xytext=(5, -12), textcoords="offset points", fontsize=10)
+
+    # Pareto front highlighting with the per-method markers/colors
+    if series:
+        all_steps = sorted(set(int(st) for s in series for st in s["steps"]))
+        for st in all_steps:
+            pts, idx_map = [], []
+            for si, s in enumerate(series):
+                idx = np.where(s["steps"] == st)[0]
+                if idx.size == 0:
+                    continue
+                pi = int(idx[0])
+                x, y = s["xs"][pi], s["ys"][pi]
+                if math.isfinite(x) and math.isfinite(y):
+                    pts.append((x, y))
+                    idx_map.append((si, pi))
+            if not pts:
+                continue
+            front = pareto_front_indices(pts, minimize_x=min_x, minimize_y=min_y)
+            for k, (si, pi) in enumerate(idx_map):
+                s = series[si]
+                x, y = s["xs"][pi], s["ys"][pi]
+                if k in front:
+                    ax.scatter(x, y, s=42, color=s["color"], marker=s["marker"],
+                               edgecolor="black", linewidths=1.6, zorder=4)
+                else:
+                    ax.scatter(x, y, s=28, color=s["color"], marker=s["marker"],
+                               edgecolor="none", alpha=0.9, zorder=3)
+
+    # --- Unified legend (unchanged) ---
+    handles, labels = ax.get_legend_handles_labels()
+
+    from matplotlib.legend_handler import HandlerTuple, HandlerBase
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    class HandlerDotWithText(HandlerBase):
+        def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
+            dot = Line2D([width * 0.25], [height / 2.0],
+                         color='gray', marker='o', linestyle='None', markersize=6,
+                         transform=trans)
+            txt = plt.Text(width * 0.55, height / 2.0, "1",
+                           color='black', fontsize=10,
+                           verticalalignment='center', horizontalalignment='left',
+                           transform=trans)
+            return [dot, txt]
+
+    pareto_handle = Line2D([], [], color='gray', marker='o', linestyle='None', markeredgewidth=1.5,
+                           markeredgecolor='black', markersize=6)
+    std_handle = Patch(facecolor='gray', edgecolor='gray', alpha=0.15)
+    dot1_handle = object()
+
+    handles += [std_handle, pareto_handle, dot1_handle]
+    labels  += ['± Std deviation area', 'Pareto front point\nper sub question nb', 'Nb of sub questions']
+
+    leg = ax.legend(handles=handles, labels=labels,
+                    handler_map={dot1_handle: HandlerDotWithText()},
+                    frameon=True, fontsize=10, loc="best", title=None)
+    leg.get_frame().set_alpha(0.9)
+
+    # Axes setup
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
+    ax.set_xlabel(f"{METRIC_CONV.get(metric_x, metric_x)}",fontsize=18)
+    ax.set_ylabel(f"{METRIC_CONV.get(metric_y, metric_y)}",fontsize=18)
+    ax.grid(True, linestyle=":", linewidth=0.7, alpha=0.6)
+
+    plt.tight_layout()
+
+    # Save
+    if drawn > 0:
+        for fmt in formats:
+            path = f"{outpath}.{fmt}"
+            try:
+                fig.savefig(path, dpi=200, bbox_inches="tight")
+                if not quiet:
+                    print(f"[SAVE] {path}")
+            except Exception as e:
+                print(f"[WARN] Failed to save {path}: {e}", file=sys.stderr)
+    else:
+        if not quiet:
+            print(f"[SKIP] {dskey}: no curves with data.")
+    plt.close(fig)
+
+def plot_metric_vs_metric(results, metric_x, metric_y, outdir, formats=("png",), show=False, quiet=False):
+    os.makedirs(outdir, exist_ok=True)
     available_ds = list(results.keys())
     ordered_ds = [ds for ds in DATASET_ORDER if ds in results] + \
                  [ds for ds in sorted(available_ds) if ds not in DATASET_ORDER]
 
     for dskey in ordered_ds:
         ds = results[dskey]
-        steps_sorted = ds["steps"]
-        cells = ds["cells"]  # (step, method, cdm) -> {metric: (mean,std), ...}
+        cells = ds["cells"]
+        # Only CD-BPR
+        pairs_all = {(k[1], k[2]) for k in cells.keys() if str(k[2]).strip().lower() == "cd-bpr"}
+        pairs_full = sorted(pairs_all, key=lambda p: (METHOD_ORDER.index(p[0]) if p[0] in METHOD_ORDER else 99))
+        pairs_no_betacd = [p for p in pairs_full if p[0].lower() != "betacd"]
 
-        # Collect all (method, cdm) present and DROP NCDM + BETACD
-        pairs = set((k[1], k[2]) for k in cells.keys())
-        pairs = {
-            p for p in pairs
-            if str(p[1]).strip().lower() != "ncdm"     # drop NCDM CDM
-        }
+        base = os.path.join(outdir, f"fig_{dskey}_{metric_x}_vs_{metric_y}")
+        _draw_one_figure(dskey, ds, metric_x, metric_y, pairs_full, base, formats, quiet)
 
-
-        def _pair_sort_key(p):
-            m, c = p
-            mo = METHOD_ORDER.index(m) if m in METHOD_ORDER else len(METHOD_ORDER)
-            return (mo, c)
-        pairs_sorted = sorted(pairs, key=_pair_sort_key)
-
-        fig, ax = plt.subplots(figsize=(7.2, 5.6), constrained_layout=False)
-
-        drawn = 0
-        color_cycle_extra = iter(default_colors)
-        for (method, cdm) in pairs_sorted:
-            xs, ys, xsd, ysd, labels_steps = [], [], [], [], []
-
-            for st in steps_sorted:
-                key = (st, method, cdm)
-                if key not in cells:
-                    continue
-                metric_dict = cells[key]
-                if (metric_x not in metric_dict) or (metric_y not in metric_dict):
-                    continue
-                mx, sx = metric_dict[metric_x]
-                my, sy = metric_dict[metric_y]
-                if not (math.isfinite(mx) and math.isfinite(my) and math.isfinite(sx) and math.isfinite(sy)):
-                    continue
-                xs.append(mx); ys.append(my); xsd.append(sx); ysd.append(sy); labels_steps.append(st)
-
-            if len(xs) == 0:
-                continue
-
-            color = method_colors.get(method, next(color_cycle_extra, "#333333"))
-            marker = cdm_markers.get(cdm, "x")
-            ls = cdm_linestyles.get(cdm, "-.")
-
-            # mean curve
-            ax.plot(xs, ys, linestyle=ls, marker=marker,
-                    label=f"Avg {METHOD_CONV.get(method,method.upper())}", color=color)
-
-            # ---------- NEW: error boxes at initial and final steps ----------
-            # helper to draw one rectangle given center (mx,my) and stds (sx,sy)
-            def draw_error_box(mx, my, sx, sy, ec, fc_alpha=0.18, lw=1.0,method=""):
-                if not (math.isfinite(mx) and math.isfinite(my) and math.isfinite(sx) and math.isfinite(sy)):
-                    return
-                rect = Rectangle((mx - sx, my - sy), 2*sx, 2*sy,
-                                 facecolor=ec, edgecolor=ec, lw=lw, alpha=fc_alpha, label= f"Avg ± Std  {METHOD_CONV.get(method,method.upper())}")
-                ax.add_patch(rect)
-
-            # first point
-            #draw_error_box(xs[0], ys[0], xsd[0], ysd[0], color)
-            # last point (if distinct)
-            if len(xs) > 1:
-                draw_error_box(xs[-1], ys[-1], xsd[-1], ysd[-1], color,method=method)
-
-
-            # (optional) annotate first and last step labels
-            ax.annotate(f"{1}", (xs[0], ys[0]), xytext=(4, 4),
-                        textcoords="offset points", fontsize=8)
-            if len(xs) >= 2:
-                ax.annotate(f"{labels_steps[-1]+1}", (xs[-1], ys[-1]), xytext=(4, -10),
-                            textcoords="offset points", fontsize=8)
-
-            drawn += 1
-
-        ax.set_xlabel(f"{METRIC_CONV.get(metric_x,metric_x)}")
-        ax.set_ylabel(f"{METRIC_CONV.get(metric_y,metric_y)}")
-        ds_label_raw = ds.get("_label", dskey)
-        title = str(ds_label_raw).replace("\\", "") if isinstance(ds_label_raw, str) else str(ds_label_raw)
-        
-        ax.grid(True, linestyle=":", linewidth=0.7, alpha=0.6)
-        if drawn > 0:
-            leg = ax.legend(frameon=True, fontsize=9, loc="best")
-            leg.get_frame().set_alpha(0.9)
-
-        plt.tight_layout()
-
-        if drawn > 0:
-            for fmt in formats:
-                outpath = os.path.join(outdir, f"fig_{dskey}_{metric_x}_vs_{metric_y}.{fmt}")
-                try:
-                    fig.savefig(outpath, dpi=200, bbox_inches="tight")
-                    if not quiet:
-                        print(f"[SAVE] {outpath}")
-                except Exception as e:
-                    print(f"[WARN] Failed to save {outpath}: {e}", file=sys.stderr)
-        else:
-            if not quiet:
-                print(f"[SKIP] {dskey}: no non-NCDM curves with data.")
+        base_nb = os.path.join(outdir, f"fig_{dskey}_{metric_x}_vs_{metric_y}_no_betacd")
+        _draw_one_figure(dskey, ds, metric_x, metric_y, pairs_no_betacd, base_nb, formats, quiet)
 
         if show:
-            plt.show()
-        else:
-            plt.close(fig)
+            pass
 
-METRIC_CONV = {'mi_acc':'Accuracy',"meta_doa":"Meta-DOA"}
-METHOD_CONV = {'method':'MICAT', 'naive':'Naive-CAT', 'approxgap':'Approx-GAP','betacd':'BETA-CD'}
+METRIC_CONV = {'mi_acc': 'Accuracy', "meta_doa": "Meta-DOA"}
+METHOD_CONV = {'method': 'MICAT', 'naive': 'Simple-CAT', 'approxgap': 'Approx-GAP', 'betacd': 'BETA-CD'}
 
 # ---------- Main ----------
 def main():
-    ap = argparse.ArgumentParser(description="Plot mean(metric_y) vs mean(metric_x) per dataset with error boxes at first/last steps.")
-    ap.add_argument("--dir", default=".", help="Directory containing *_metrics_summary.csv")
-    ap.add_argument("--metric-x", required=True, help="Metric name for x-axis (e.g., rmse)")
-    ap.add_argument("--metric-y", required=True, help="Metric name for y-axis (e.g., mi_acc)")
-    ap.add_argument("--outdir", default="./figures_metric_vs_metric", help="Output directory for figures")
-    ap.add_argument("--formats", default="png", help="Comma-separated formats to save (e.g., png,pdf)")
-    ap.add_argument("--show", action="store_true", help="Show figures interactively")
+    ap = argparse.ArgumentParser(description="Plots with per-step Pareto front; Pareto points circled in black.")
+    ap.add_argument("--dir", default="./logs/", help="Directory containing *_metrics_summary.csv")
+    ap.add_argument("--metric-x", default="mi_acc", help="Metric for x-axis (e.g., rmse)")
+    ap.add_argument("--metric-y", default="meta_doa", help="Metric for y-axis (e.g., mi_acc)")
+    ap.add_argument("--outdir", default="../data/", help="Output directory for figures")
+    ap.add_argument("--formats", default="pdf", help="Comma-separated formats (e.g., png,pdf)")
+    ap.add_argument("--show", action="store_true", help="(Optional) Show figures interactively")
     ap.add_argument("--quiet", action="store_true", help="Reduce logs")
     args = ap.parse_args()
 
@@ -309,12 +389,10 @@ def main():
         missing = []
         if args.metric_x not in metrics_seen: missing.append(args.metric_x)
         if args.metric_y not in metrics_seen: missing.append(args.metric_y)
-        print(f"[WARN] Requested metric(s) not found in any file: {', '.join(missing)}", file=sys.stderr)
+        if missing:
+            print(f"[WARN] Requested metric(s) not found: {', '.join(missing)}", file=sys.stderr)
 
-    formats = tuple(s.strip().lower() for s in args.formats.split(",") if s.strip())
-    if not formats:
-        formats = ("png",)
-
+    formats = tuple(s.strip().lower() for s in args.formats.split(",") if s.strip()) or ("png",)
     plot_metric_vs_metric(results, metric_x=args.metric_x, metric_y=args.metric_y,
                           outdir=args.outdir, formats=formats, show=args.show, quiet=args.quiet)
 

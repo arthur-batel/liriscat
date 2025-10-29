@@ -42,9 +42,6 @@ def inverse_softplus(x):
     """
     return torch.where(x > 20, torch.log(x), torch.log(torch.expm1(x)))
 
-
-
-
 class AbstractSelectionStrategy(ABC):
     def __init__(self, name: str = None, metadata=None, **config):
         logging.debug(f'------- Abstract model __init__()')
@@ -911,7 +908,6 @@ class AbstractSelectionStrategy(ABC):
                     [
                         {'params': self.meta_params,  'lr': self.config.get('meta_lr', 0.5), "name": "meta_params"},
                         {'params': self.cross_cond,  'lr': self.config.get('meta_lr', 0.5), "name": "cross_cond"},
-                        #{'params': self.meta_lambda,  'lr': self.config.get('meta_lr', 0.5), "name": "meta_lambda"},
                         {'params': self.learning_users_emb,  'lr': self.config.get('learning_users_emb_lr', 0.0005), "name": "learning_users_emb"},
                     ]
                 )

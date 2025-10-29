@@ -57,7 +57,7 @@ def main(dataset_name,cdm, i_fold=None):
         n_query=16,
         num_inner_users_epochs=9,
         lambda_=2.67605964593852e-06,
-        inner_user_lr= 0.05
+        inner_user_lr= 0.001
     )
     logging.info(f'#### config : {config} ####')
 

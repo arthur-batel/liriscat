@@ -56,11 +56,11 @@ def main(dataset_name,cdm, i_fold=None):
         valid_metric= 'rmse',
         n_query=16,
         num_inner_users_epochs=3,
-        lambda_=7.380681029927064e-05,
-        inner_user_lr= 0.0007838402204978467,
+        lambda_=2.6180638633142202e-05,
+        inner_user_lr= 0.008921749543575398,
         meta_lr=0.05
     )
-    config['kl_weight'] =0.0005
+    config['kl_weight'] =0.0001
     logging.info(f'#### config : {config} ####')
 
     concept_map = json.load(open(

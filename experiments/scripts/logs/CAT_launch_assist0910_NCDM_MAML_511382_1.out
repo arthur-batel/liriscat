@@ -1,0 +1,174 @@
+PID 96763 sees CUDA_VISIBLE_DEVICES = 0
+→ torch.device is 0 Tesla V100-SXM2-16GB
+[INFO 17:39] Using device: cuda
+[INFO 17:39] #### config : {'seed': 0, 'dataset_name': 'assist0910', 'load_params': True, 'save_params': False, 'embs_path': '../embs/', 'params_path': '../ckpt/', 'early_stopping': True, 'esc': 'error', 'verbose_early_stopping': False, 'disable_tqdm': False, 'valid_metric': 'rmse', 'learning_rate': 0.001, 'batch_size': 512, 'valid_batch_size': 10000, 'num_epochs': 100, 'eval_freq': 1, 'patience': 20, 'device': device(type='cuda'), 'lambda': 7.380681029927064e-05, 'tensorboard': False, 'flush_freq': True, 'pred_metrics': ['mi_acc', 'rmse', 'mae', 'mi_prec', 'mi_rec', 'mi_f_b', 'mi_auc', 'ma_prec', 'ma_rec', 'ma_f_b'], 'profile_metrics': ['meta_doa', 'pc-er', 'rm'], 'num_responses': 12, 'low_mem': False, 'n_query': 16, 'CDM': 'ncdm', 'i_fold': 1, 'num_inner_users_epochs': 3, 'num_inner_epochs': 10, 'inner_lr': 0.0001, 'inner_user_lr': 1.5, 'meta_lr': 0.05, 'meta_trainer': 'MAML', 'num_workers': 0, 'pin_memory': False, 'debug': False} ####
+[INFO 17:57] Random_cont_model
+../ckpt/assist0910_NCDM_fold_1_seed_0
+[INFO 18:06] compiling selection model
+[INFO 21:42] ⏳ Training started...
+[INFO 21:42] ------- START Training
+[INFO 21:42] train on cuda
+[INFO 22:12] - learning_users_emb: 0.05
+[INFO 22:23] rmse : 0.5330041646957397
+[INFO 22:23] valid_rmse : 1.3000102043151855
+[INFO 22:23] valid_loss : 2.0775015354156494
+[INFO 22:46] - learning_users_emb: 0.05
+[INFO 23:23] rmse : 0.5292974710464478
+[INFO 23:23] valid_rmse : 1.2909694910049438
+[INFO 23:23] valid_loss : 2.04060959815979
+[INFO 23:44] - learning_users_emb: 0.05
+[INFO 23:54] rmse : 0.5285777449607849
+[INFO 23:54] valid_rmse : 1.289214015007019
+[INFO 23:54] valid_loss : 2.0298798084259033
+[INFO 24:14] - learning_users_emb: 0.05
+[INFO 24:24] rmse : 0.525881290435791
+[INFO 24:24] valid_rmse : 1.282637357711792
+[INFO 24:24] valid_loss : 1.9977715015411377
+[INFO 24:43] - learning_users_emb: 0.05
+[INFO 24:53] rmse : 0.5275093913078308
+[INFO 24:53] valid_rmse : 1.286608338356018
+[INFO 24:53] valid_loss : 2.000946521759033
+[INFO 25:11] - learning_users_emb: 0.05
+[INFO 25:21] rmse : 0.5271968245506287
+[INFO 25:21] valid_rmse : 1.2858459949493408
+[INFO 25:21] valid_loss : 1.9941084384918213
+[INFO 25:39] - learning_users_emb: 0.05
+[INFO 25:49] rmse : 0.5244379639625549
+[INFO 25:49] valid_rmse : 1.2791169881820679
+[INFO 25:49] valid_loss : 1.9629840850830078
+[INFO 26:06] - learning_users_emb: 0.05
+[INFO 26:16] rmse : 0.5213637948036194
+[INFO 26:16] valid_rmse : 1.2716190814971924
+[INFO 26:16] valid_loss : 1.9439010620117188
+[INFO 26:33] - learning_users_emb: 0.05
+[INFO 26:43] rmse : 0.5220074653625488
+[INFO 26:43] valid_rmse : 1.2731889486312866
+[INFO 26:43] valid_loss : 1.9493565559387207
+[INFO 26:59] - learning_users_emb: 0.05
+[INFO 27:09] rmse : 0.5226250290870667
+[INFO 27:09] valid_rmse : 1.2746952772140503
+[INFO 27:09] valid_loss : 1.9511021375656128
+[INFO 27:25] - learning_users_emb: 0.05
+[INFO 27:35] rmse : 0.5229330658912659
+[INFO 27:35] valid_rmse : 1.2754465341567993
+[INFO 27:35] valid_loss : 1.9522850513458252
+[INFO 27:51] - learning_users_emb: 0.025
+[INFO 28:01] rmse : 0.5188141465187073
+[INFO 28:01] valid_rmse : 1.2654004096984863
+[INFO 28:01] valid_loss : 1.92546808719635
+[INFO 28:16] - learning_users_emb: 0.025
+[INFO 28:26] rmse : 0.5211768746376038
+[INFO 28:26] valid_rmse : 1.2711631059646606
+[INFO 28:26] valid_loss : 1.9371542930603027
+[INFO 28:42] - learning_users_emb: 0.025
+[INFO 28:52] rmse : 0.5194320678710938
+[INFO 28:52] valid_rmse : 1.2669074535369873
+[INFO 28:52] valid_loss : 1.9294233322143555
+[INFO 29:07] - learning_users_emb: 0.025
+[INFO 29:17] rmse : 0.5221732258796692
+[INFO 29:17] valid_rmse : 1.2735933065414429
+[INFO 29:17] valid_loss : 1.9504823684692383
+[INFO 29:32] - learning_users_emb: 0.0125
+[INFO 29:42] rmse : 0.5197799205780029
+[INFO 29:42] valid_rmse : 1.2677559852600098
+[INFO 29:42] valid_loss : 1.9320752620697021
+[INFO 29:57] - learning_users_emb: 0.0125
+[INFO 30:06] rmse : 0.522110641002655
+[INFO 30:06] valid_rmse : 1.2734405994415283
+[INFO 30:06] valid_loss : 1.944269061088562
+[INFO 30:21] - learning_users_emb: 0.0125
+[INFO 30:31] rmse : 0.5217000246047974
+[INFO 30:31] valid_rmse : 1.2724391222000122
+[INFO 30:31] valid_loss : 1.9424840211868286
+[INFO 30:45] - learning_users_emb: 0.00625
+[INFO 30:55] rmse : 0.5232478380203247
+[INFO 30:55] valid_rmse : 1.2762142419815063
+[INFO 30:55] valid_loss : 1.9555206298828125
+[INFO 31:10] - learning_users_emb: 0.00625
+[INFO 31:20] rmse : 0.521045446395874
+[INFO 31:20] valid_rmse : 1.2708425521850586
+[INFO 31:20] valid_loss : 1.9401265382766724
+[INFO 31:34] - learning_users_emb: 0.00625
+[INFO 31:44] rmse : 0.5231994986534119
+[INFO 31:44] valid_rmse : 1.2760963439941406
+[INFO 31:44] valid_loss : 1.9529601335525513
+[INFO 31:58] - learning_users_emb: 0.003125
+[INFO 32:08] rmse : 0.5223402380943298
+[INFO 32:08] valid_rmse : 1.274000644683838
+[INFO 32:08] valid_loss : 1.9483411312103271
+[INFO 32:22] - learning_users_emb: 0.003125
+[INFO 32:32] rmse : 0.5224013328552246
+[INFO 32:32] valid_rmse : 1.2741496562957764
+[INFO 32:32] valid_loss : 1.9462991952896118
+[INFO 32:46] - learning_users_emb: 0.003125
+[INFO 32:56] rmse : 0.5218676924705505
+[INFO 32:56] valid_rmse : 1.2728480100631714
+[INFO 32:56] valid_loss : 1.9419149160385132
+[INFO 33:10] - learning_users_emb: 0.0015625
+[INFO 33:20] rmse : 0.5234981775283813
+[INFO 33:20] valid_rmse : 1.2768248319625854
+[INFO 33:20] valid_loss : 1.9553414583206177
+[INFO 33:33] - learning_users_emb: 0.0015625
+[INFO 33:43] rmse : 0.5220478177070618
+[INFO 33:43] valid_rmse : 1.2732874155044556
+[INFO 33:43] valid_loss : 1.9476436376571655
+[INFO 33:57] - learning_users_emb: 0.0015625
+[INFO 34:07] rmse : 0.5218138098716736
+[INFO 34:07] valid_rmse : 1.2727166414260864
+[INFO 34:07] valid_loss : 1.942952275276184
+[INFO 34:20] - learning_users_emb: 0.00078125
+[INFO 34:31] rmse : 0.5239769816398621
+[INFO 34:31] valid_rmse : 1.2779927253723145
+[INFO 34:31] valid_loss : 1.9638819694519043
+[INFO 34:44] - learning_users_emb: 0.00078125
+[INFO 34:54] rmse : 0.5222593545913696
+[INFO 34:54] valid_rmse : 1.2738033533096313
+[INFO 34:54] valid_loss : 1.9455647468566895
+[INFO 35:07] - learning_users_emb: 0.00078125
+[INFO 35:17] rmse : 0.5238037705421448
+[INFO 35:17] valid_rmse : 1.2775702476501465
+[INFO 35:17] valid_loss : 1.9585187435150146
+[INFO 35:31] - learning_users_emb: 0.000390625
+[INFO 35:41] rmse : 0.5236641764640808
+[INFO 35:41] valid_rmse : 1.2772297859191895
+[INFO 35:41] valid_loss : 1.9566999673843384
+[INFO 35:54] - learning_users_emb: 0.000390625
+[INFO 36:04] rmse : 0.5231879949569702
+[INFO 36:04] valid_rmse : 1.2760683298110962
+[INFO 36:04] valid_loss : 1.9529359340667725
+[INFO 36:04] -- END Training --
+[INFO 36:04] ✅ Training completed in 861.85 seconds.
+[INFO 36:04] train on cuda
+[WARNING 37:48] Computing RM on meta and QUERY set
+[INFO 38:40] RM: -0.0037629171660892545
+[WARNING 38:43] Computing RM on meta and QUERY set
+[INFO 38:43] RM: 0.0011118942886430409
+[WARNING 38:45] Computing RM on meta and QUERY set
+[INFO 38:45] RM: -0.00551665476631142
+[WARNING 38:48] Computing RM on meta and QUERY set
+[INFO 38:48] RM: -0.004809851464829422
+[WARNING 38:51] Computing RM on meta and QUERY set
+[INFO 38:51] RM: 0.001628925829153212
+[WARNING 38:53] Computing RM on meta and QUERY set
+[INFO 38:53] RM: 0.0020810325578759343
+[WARNING 38:56] Computing RM on meta and QUERY set
+[INFO 38:56] RM: -0.01589584496527382
+[WARNING 38:59] Computing RM on meta and QUERY set
+[INFO 38:59] RM: -0.01412146061462261
+[WARNING 39:02] Computing RM on meta and QUERY set
+[INFO 39:02] RM: -0.015699652158437216
+[WARNING 39:04] Computing RM on meta and QUERY set
+[INFO 39:04] RM: -0.021558740782237906
+[WARNING 39:07] Computing RM on meta and QUERY set
+[INFO 39:07] RM: -0.026967860030891386
+[WARNING 39:10] Computing RM on meta and QUERY set
+[INFO 39:10] RM: -0.024736161645194526
+[WARNING 39:13] Computing RM on meta and QUERY set
+[INFO 39:13] RM: -0.025236223774267364
+[WARNING 39:15] Computing RM on meta and QUERY set
+[INFO 39:15] RM: -0.027040574672168246
+[WARNING 39:18] Computing RM on meta and QUERY set
+[INFO 39:18] RM: -0.0273494933790772
+[WARNING 39:21] Computing RM on meta and QUERY set
+[INFO 39:21] RM: -0.02867787772733155
+[INFO 39:21] Fold 1; pareto_index: 4.069495674264973; results: ({0: {'mi_acc': 0.5319037437438965, 'rmse': 0.535343587398529, 'mae': 0.4607873260974884, 'mi_prec': 0.4773123860359192, 'mi_rec': 0.6488730907440186, 'mi_f_b': 0.5500251650810242, 'mi_auc': nan, 'ma_prec': 0.5454447269439697, 'ma_rec': 0.5442681312561035, 'ma_f_b': 0.5311433672904968}, 1: {'mi_acc': 0.5303347110748291, 'rmse': 0.535227358341217, 'mae': 0.46054574847221375, 'mi_prec': 0.47905758023262024, 'mi_rec': 0.6458823680877686, 'mi_f_b': 0.5501002073287964, 'mi_auc': nan, 'ma_prec': 0.5430535674095154, 'ma_rec': 0.541867733001709, 'ma_f_b': 0.5294264554977417}, 2: {'mi_acc': 0.5303347110748291, 'rmse': 0.5350115895271301, 'mae': 0.46017953753471375, 'mi_prec': 0.47643980383872986, 'mi_rec': 0.6469194293022156, 'mi_f_b': 0.548743724822998, 'mi_auc': nan, 'ma_prec': 0.5437029600143433, 'ma_rec': 0.5425608158111572, 'ma_f_b': 0.5295518040657043}, 3: {'mi_acc': 0.5292887091636658, 'rmse': 0.5347980260848999, 'mae': 0.45983579754829407, 'mi_prec': 0.47556719183921814, 'mi_rec': 0.6457346081733704, 'mi_f_b': 0.5477387309074402, 'mi_auc': nan, 'ma_prec': 0.5426138639450073, 'ma_rec': 0.5415002703666687, 'ma_f_b': 0.5285040140151978}, 4: {'mi_acc': 0.5339958071708679, 'rmse': 0.5349889397621155, 'mae': 0.4597729742527008, 'mi_prec': 0.47643980383872986, 'mi_rec': 0.6523297429084778, 'mi_f_b': 0.5506808161735535, 'mi_auc': nan, 'ma_prec': 0.5482721328735352, 'ma_rec': 0.5470951199531555, 'ma_f_b': 0.5333523750305176}, 5: {'mi_acc': 0.5339958071708679, 'rmse': 0.5347034931182861, 'mae': 0.4590793550014496, 'mi_prec': 0.4738219976425171, 'mi_rec': 0.6534296274185181, 'mi_f_b': 0.5493171215057373, 'mi_auc': nan, 'ma_prec': 0.5489214658737183, 'ma_rec': 0.5478063821792603, 'ma_f_b': 0.5334566235542297}, 6: {'mi_acc': 0.5329498052597046, 'rmse': 0.5346130728721619, 'mae': 0.45866769552230835, 'mi_prec': 0.47207680344581604, 'mi_rec': 0.6525934934616089, 'mi_f_b': 0.547848105430603, 'mi_auc': nan, 'ma_prec': 0.5480488538742065, 'ma_rec': 0.5469800233840942, 'ma_f_b': 0.5324421525001526}, 7: {'mi_acc': 0.5339958071708679, 'rmse': 0.5344663858413696, 'mae': 0.45823609828948975, 'mi_prec': 0.47294938564300537, 'mi_rec': 0.6537997722625732, 'mi_f_b': 0.5488607883453369, 'mi_auc': nan, 'ma_prec': 0.5491378903388977, 'ma_rec': 0.5480448603630066, 'ma_f_b': 0.5334893465042114}, 8: {'mi_acc': 0.5339958071708679, 'rmse': 0.5341798663139343, 'mae': 0.45772483944892883, 'mi_prec': 0.4738219976425171, 'mi_rec': 0.6534296274185181, 'mi_f_b': 0.5493171215057373, 'mi_auc': nan, 'ma_prec': 0.5489214658737183, 'ma_rec': 0.5478063821792603, 'ma_f_b': 0.5334566235542297}, 9: {'mi_acc': 0.5319037437438965, 'rmse': 0.5338546633720398, 'mae': 0.456918865442276, 'mi_prec': 0.47294938564300537, 'mi_rec': 0.6506602764129639, 'mi_f_b': 0.5477513670921326, 'mi_auc': nan, 'ma_prec': 0.5465269088745117, 'ma_rec': 0.5454413890838623, 'ma_f_b': 0.5313282608985901}, 10: {'mi_acc': 0.5329498052597046, 'rmse': 0.5337955951690674, 'mae': 0.4564270079135895, 'mi_prec': 0.47294938564300537, 'mi_rec': 0.6522262096405029, 'mi_f_b': 0.5483055114746094, 'mi_auc': nan, 'ma_prec': 0.5478323698043823, 'ma_rec': 0.5467421412467957, 'ma_f_b': 0.5324093699455261}, 11: {'mi_acc': 0.5350418090820312, 'rmse': 0.5335039496421814, 'mae': 0.45580288767814636, 'mi_prec': 0.4738219976425171, 'mi_rec': 0.6550060510635376, 'mi_f_b': 0.5498734712600708, 'mi_auc': nan, 'ma_prec': 0.5502269268035889, 'ma_rec': 0.549109697341919, 'ma_f_b': 0.5345364809036255}, 12: {'mi_acc': 0.5360878705978394, 'rmse': 0.5334013104438782, 'mae': 0.45523083209991455, 'mi_prec': 0.4738219976425171, 'mi_rec': 0.6565901041030884, 'mi_f_b': 0.5504308342933655, 'mi_auc': nan, 'ma_prec': 0.5515323877334595, 'ma_rec': 0.5504148602485657, 'ma_f_b': 0.5356152057647705}, 13: {'mi_acc': 0.538179874420166, 'rmse': 0.5331445932388306, 'mae': 0.4546327292919159, 'mi_prec': 0.4746945798397064, 'mi_rec': 0.6593939661979675, 'mi_f_b': 0.5520040988922119, 'mi_auc': nan, 'ma_prec': 0.553926944732666, 'ma_rec': 0.5527880787849426, 'ma_f_b': 0.5377397537231445}, 14: {'mi_acc': 0.5371338725090027, 'rmse': 0.5330057144165039, 'mae': 0.4540790915489197, 'mi_prec': 0.4746945798397064, 'mi_rec': 0.6577993035316467, 'mi_f_b': 0.5514445304870605, 'mi_auc': nan, 'ma_prec': 0.5526214241981506, 'ma_rec': 0.5514802932739258, 'ma_f_b': 0.5366622805595398}, 15: {'mi_acc': 0.5376569032669067, 'rmse': 0.5327569246292114, 'mae': 0.45363983511924744, 'mi_prec': 0.4781849980354309, 'mi_rec': 0.6570743322372437, 'mi_f_b': 0.5535353422164917, 'mi_auc': nan, 'ma_prec': 0.5524084568023682, 'ma_rec': 0.5511716604232788, 'ma_f_b': 0.5370713472366333}}, {0: {'meta_doa': np.float64(0.4767761989501031), 'pc-er': -0.0867919921875, 'rm': -0.0037629171660892545}, 1: {'meta_doa': np.float64(0.4847243240361355), 'pc-er': -0.05035400390625, 'rm': 0.0011118942886430409}, 2: {'meta_doa': np.float64(0.4830294803748647), 'pc-er': 0.0221710205078125, 'rm': -0.00551665476631142}, 3: {'meta_doa': np.float64(0.4827606506051285), 'pc-er': 0.031463623046875, 'rm': -0.004809851464829422}, 4: {'meta_doa': np.float64(0.4832669559162584), 'pc-er': 0.06951904296875, 'rm': 0.001628925829153212}, 5: {'meta_doa': np.float64(0.48298711204069633), 'pc-er': 0.059539794921875, 'rm': 0.0020810325578759343}, 6: {'meta_doa': np.float64(0.476254858835593), 'pc-er': 0.05926513671875, 'rm': -0.01589584496527382}, 7: {'meta_doa': np.float64(0.4717753502457512), 'pc-er': 0.05780029296875, 'rm': -0.01412146061462261}, 8: {'meta_doa': np.float64(0.45787758931700434), 'pc-er': 0.04034423828125, 'rm': -0.015699652158437216}, 9: {'meta_doa': np.float64(0.46932440241928014), 'pc-er': 0.052490234375, 'rm': -0.021558740782237906}, 10: {'meta_doa': np.float64(0.47027941169778414), 'pc-er': 0.10028076171875, 'rm': -0.026967860030891386}, 11: {'meta_doa': np.float64(0.4739054928900308), 'pc-er': 0.11041259765625, 'rm': -0.024736161645194526}, 12: {'meta_doa': np.float64(0.47559754543816823), 'pc-er': 0.0882568359375, 'rm': -0.025236223774267364}, 13: {'meta_doa': np.float64(0.4794934969889903), 'pc-er': 0.0982666015625, 'rm': -0.027040574672168246}, 14: {'meta_doa': np.float64(0.4784337596992725), 'pc-er': 0.10400390625, 'rm': -0.0273494933790772}, 15: {'meta_doa': np.float64(0.47816427418345675), 'pc-er': 0.10369873046875, 'rm': -0.02867787772733155}})

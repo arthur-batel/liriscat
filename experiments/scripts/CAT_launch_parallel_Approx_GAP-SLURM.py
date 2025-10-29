@@ -54,11 +54,11 @@ def main(dataset_name,cdm,  i_fold=None):
         CDM = cdm,
         meta_trainer='Approx_GAP',
         valid_metric= 'rmse',
-        n_query=25,
+        n_query=16,
         num_inner_users_epochs=3,
-        meta_lr=0.05,
-        lambda_=6.883708386254995e-06,
-        inner_user_lr=2.10315236650495e-05
+        meta_lr=2.0,
+        lambda_=2.67605964593852e-06,
+        inner_user_lr=0.01
     )
     logging.info(f'#### config : {config} ####')
 

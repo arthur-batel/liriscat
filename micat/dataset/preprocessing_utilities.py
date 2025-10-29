@@ -171,11 +171,11 @@ def plot_embedding_distribution(
         if idx in (0, 15):
             g.ax_marg_y.plot([0.0, 1.0], [py, py], transform=by, linestyle=':',
                              color='black', alpha=0.75, clip_on=False)
-            g.ax_marg_y.text(1.0, py, str(idx + 1), transform=by, color='black', fontsize=9.5,
+            g.ax_marg_y.text(1.0, py, str(idx + 1), transform=by, color='black', fontsize=11,
                              ha='left', va='center',bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
             try:
                 perf_y = ecdf_percentiles(train_emb, j, py)
-                g.ax_marg_y.text(0.70, py, f"{perf_y}%", transform=by, color='black', fontsize=9.5,
+                g.ax_marg_y.text(0.70, py, f"{perf_y}%", transform=by, color='black', fontsize=11,
                                  ha='right', va='center',
                                  bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
             except Exception:
@@ -196,26 +196,26 @@ def plot_embedding_distribution(
     g.ax_marg_x.plot([px_avg, px_avg], [0.0, 1.1], transform=bx, linestyle=':',
                      color='black', alpha=0.75, clip_on=False)
     g.ax_marg_x.text(px_avg, 1.1, "Init (t=0): \nAvg train value", transform=bx,
-                     ha='center', va='bottom', fontsize=9.5,
+                     ha='center', va='bottom', fontsize=11,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
     # static marginal hints
-    g.ax_marg_x.text(1.10, 0.80, "Number of\nsubmitted questions",
-                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=9.5,
+    g.ax_marg_x.text(1.10, 0.85, "Number of\nsubmitted questions",
+                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=12,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-    g.ax_marg_x.text(1.10, 0.40, "> x% of the\ntraining students",
-                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=9.5,
+    g.ax_marg_x.text(1.10, 0.35, "> x% of the\ntraining students",
+                     transform=g.ax_marg_x.transAxes, ha='left', va='center', fontsize=12,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
     # labels
     cat_i = skills[i + 1]
     cat_j = skills[j + 1]
-    g.set_axis_labels(f'Profile dimension {i} : math category "{cat_i}"',
-                      f'Profile dimension {j} : math category "{cat_j}"', fontsize=11)
+    g.set_axis_labels(f'Profile dimension {i}:\nmath category "{cat_i}"',
+                      f'Profile dimension {j}:\nmath category "{cat_j}"', fontsize=13)
 
     plt.tight_layout()
-    plt.legend(framealpha=1)
-    plt.savefig("../data/students_distrib.png", dpi=400, bbox_inches="tight")
+    plt.legend(framealpha=1, fontsize=12)
+    plt.savefig("../data/students_distrib.pdf", bbox_inches="tight")
     plt.show()
 
 
@@ -286,14 +286,14 @@ def plot_embedding_distribution_flow(
     bx = _bt(g.ax_marg_x.transData, g.ax_marg_x.transAxes)   # x in data, y in axes
     by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)   # x in axes, y in data
     g.ax_marg_x.plot([px_avg, px_avg], [0, 1], transform=bx, linestyle=':', color='black', alpha=0.6, clip_on=False)
-    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=9.5,
+    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=11,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
 
 
     try:
         perf_x_avg = ecdf_percentiles(train_emb, i, px_avg)
         perf_y_avg = ecdf_percentiles(train_emb, j, py_avg)
-        g.ax_marg_x.text(px_avg, 0.4, f"{perf_x_avg}%", transform=bx, ha='center', va='bottom', fontsize=9.5,
+        g.ax_marg_x.text(px_avg, 0.4, f"{perf_x_avg}%", transform=bx, ha='center', va='bottom', fontsize=11,
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
     except:
@@ -419,8 +419,8 @@ def plot_embedding_distribution_flow(
                       f'Profile dimension {j}: \nmath category "{cat_j}"', fontsize=11)
 
     plt.tight_layout()
-    plt.legend(framealpha=1)
-    plt.savefig(f"../data/students_comp{i}{j}.png", dpi=400, bbox_inches="tight")
+    plt.legend(framealpha=1, fontsize=20)
+    plt.savefig(f"../data/students_comp{i}{j}.pdf", bbox_inches="tight")
     plt.show()
 
 
@@ -564,7 +564,7 @@ def plot_embedding_distribution_flow2(
     g.ax_marg_x.plot([px_avg, px_avg], [0.0, 1.1], linestyle=':', transform=bx,
                      color='black', alpha=0.75, clip_on=False)
     g.ax_marg_x.text(px_avg, 1.1, "Init (t=0): \nAvg train value", transform=bx,
-                     ha='center', va='bottom', fontsize=9.5,
+                     ha='center', va='bottom', fontsize=11,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
     def _bandwidth_scott(z):
@@ -732,17 +732,17 @@ def plot_embedding_distribution_comp(
     by = _bt(g.ax_marg_y.transAxes, g.ax_marg_y.transData)   # x in axes, y in data
     g.ax_marg_x.plot([px_avg, px_avg], [0, 1], transform=bx, linestyle=':', color='black', alpha=0.6, clip_on=False)
     g.ax_marg_y.plot([0, 1.1], [py_avg, py_avg], transform=by, linestyle=':', color='black', alpha=0.6, clip_on=False)
-    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=9.5,
+    g.ax_marg_x.text(px_avg, 1.06, "Init (t=0): \nAvg train value", transform=bx, ha='center', va='bottom', fontsize=13,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
-    g.ax_marg_y.text(1.1, py_avg, "Init (t=0): \nAvg train value", transform=by, ha='left', va='center', fontsize=9.5,
+    g.ax_marg_y.text(1.1, py_avg, "Init (t=0): \nAvg train value", transform=by, ha='left', va='center', fontsize=13,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.2'))
 
     try:
         perf_x_avg = ecdf_percentiles(train_emb, i, px_avg)
         perf_y_avg = ecdf_percentiles(train_emb, j, py_avg)
-        g.ax_marg_x.text(px_avg, 0.4, f"{perf_x_avg}%", transform=bx, ha='center', va='bottom', fontsize=9.5,
+        g.ax_marg_x.text(px_avg, 0.4, f"{perf_x_avg}%", transform=bx, ha='center', va='bottom', fontsize=11,
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-        g.ax_marg_y.text(0.7, py_avg, f"{perf_y_avg}%", transform=by, ha='right', va='center', fontsize=9.5,
+        g.ax_marg_y.text(0.7, py_avg, f"{perf_y_avg}%", transform=by, ha='right', va='center', fontsize=11,
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
     except:
         pass
@@ -765,40 +765,40 @@ def plot_embedding_distribution_comp(
         g.ax_marg_x.plot([px, px], [0, 1], transform=bx, linestyle=':', color=colors[c_idx % 3], alpha=0.9, clip_on=False)
         g.ax_marg_y.plot([0, 1], [py, py], transform=by, linestyle=':', color=colors[c_idx % 3], alpha=0.9, clip_on=False)
         g.ax_marg_x.text(px, 0.9, str(final_idx + 1), transform=bx, color=colors[c_idx % 3],
-                         ha='center', va='center', fontsize=9.5,
+                         ha='center', va='center', fontsize=11,
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
         g.ax_marg_y.text(0.8, py, str(final_idx + 1), transform=by, color=colors[c_idx % 3],
-                         ha='left', va='center', fontsize=9.5,
+                         ha='left', va='center', fontsize=11,
                          bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
         try:
             perf_x = ecdf_percentiles(train_emb, i, px)
             perf_y = ecdf_percentiles(train_emb, j, py)
             g.ax_marg_x.text(px, 0.4, f"{perf_x}%", transform=bx, color=colors[c_idx % 3],
-                             ha='center', va='bottom', fontsize=9.5,
+                             ha='center', va='bottom', fontsize=11,
                              bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
             g.ax_marg_y.text(0.7, py, f"{perf_y}%", transform=by, color=colors[c_idx % 3],
-                             ha='right', va='center', fontsize=9.5,
+                             ha='right', va='center', fontsize=11,
                              bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
         except:
             pass
 
     # static marginal hints
-    g.ax_marg_x.text(1.1, 0.8, "Number of\nsubmitted questions", transform=g.ax_marg_x.transAxes,
-                     ha='left', va='center', fontsize=9.5,
+    g.ax_marg_x.text(1.1, 0.85, "Number of\nsubmitted questions", transform=g.ax_marg_x.transAxes,
+                     ha='left', va='center', fontsize=13,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
-    g.ax_marg_x.text(1.1, 0.4, "> x% of the\ntraining students", transform=g.ax_marg_x.transAxes,
-                     ha='left', va='center', fontsize=9.5,
+    g.ax_marg_x.text(1.1, 0.35, "> x% of the\ntraining students", transform=g.ax_marg_x.transAxes,
+                     ha='left', va='center', fontsize=13,
                      bbox=dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.15'))
 
     # labels + legend (original style)
     cat_i, cat_j = skills[i + 1], skills[j + 1]
-    g.set_axis_labels(f'Profile dimension {i} : math category "{cat_i}"',
-                      f'Profile dimension {j} : math category "{cat_j}"', fontsize=11)
+    g.set_axis_labels(f'Profile dimension {i}:\nmath category "{cat_i}"',
+                      f'Profile dimension {j}:\nmath category "{cat_j}"', fontsize=14)
 
     plt.tight_layout()
-    plt.legend(framealpha=1)
-    plt.savefig(f"../data/students_comp{i}{j}.png", dpi=400, bbox_inches="tight")
+    plt.legend(framealpha=1, fontsize=12)
+    plt.savefig(f"../data/students_comp{i}{j}.pdf", bbox_inches="tight")
     plt.show()
 
 

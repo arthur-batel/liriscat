@@ -56,9 +56,9 @@ def main(dataset_name, cdm, i_fold=None):
         valid_metric= 'rmse',
         n_query=16,
         num_inner_users_epochs=3,
-        lambda_=  6.883708386254995e-06,
-        inner_user_lr=0.0001,
-        meta_lr=0.005
+        lambda_=  2.6180638633142202e-05,
+        inner_user_lr=1.5,
+        meta_lr=0.01
     )
     logging.info(f'#### config : {config} ####')
 

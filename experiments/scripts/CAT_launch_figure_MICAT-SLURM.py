@@ -46,7 +46,7 @@ def main(dataset_name, cdm, i_fold=None):
         learning_rate = 0.003,
         batch_size = 512,
         valid_batch_size = 10000,
-        num_epochs=1,
+        num_epochs=100,
         eval_freq = 1,
         patience = 20,
         device = device,
@@ -56,7 +56,7 @@ def main(dataset_name, cdm, i_fold=None):
         valid_metric= 'rmse',
         n_query=16,
         num_inner_users_epochs=3,
-        lambda_= 0,
+        lambda_= 2.6180638633142202e-05,
         inner_user_lr= 0.0005,
         meta_lr=0.01
     )
@@ -110,13 +110,14 @@ def main(dataset_name, cdm, i_fold=None):
     S.reset_rng()
     results_pred, results_profiles, emb_tensor, submited_sets = S.evaluate_test_get_profile(test_data, train_data, valid_data)
 
-    logging.info(f" results: {results_pred},\n\n {results_profiles},\n\n {emb_tensor.shape}")
-    _sub_user_ids,_sub_question_ids,_sub_nb_modalities,_sub_labels = submited_sets
+    logging.info(f" results: {results_pred},\n\n {results_profiles}")
+    _sub_user_ids,_sub_question_ids,_sub_nb_modalities,_sub_labels,_sub_categories = submited_sets
     torch.save(_sub_user_ids, f'../data/_sub_user_ids_MICAT_{i_fold}.pt')
     torch.save(_sub_question_ids, f'../data/_sub_question_ids_MICAT_{i_fold}.pt')
     torch.save(_sub_nb_modalities, f'../data/_sub_nb_modalities_MICAT_{i_fold}.pt')
     torch.save(_sub_labels, f'../data/_sub_labels_MICAT_{i_fold}.pt')
-    torch.save(emb_tensor, f'../data/evovling_emb_tensor_MICAT_{i_fold}.pt')
+    torch.save(_sub_categories, f'../data/_sub_categories_MICAT_{i_fold}.pt')
+    torch.save(emb_tensor, f'../data/evovling_emb_tensor_MICAT_Reg_{i_fold}.pt')
 
     del S
     gc.collect()

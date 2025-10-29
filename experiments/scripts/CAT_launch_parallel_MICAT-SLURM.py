@@ -43,7 +43,7 @@ def main(dataset_name, cdm, i_fold=None):
         load_params=True,
         save_params=False,
         esc = 'error',
-        learning_rate = 0.001,
+        learning_rate = 0.003,
         batch_size = 512,
         valid_batch_size = 10000,
         num_epochs=100,
@@ -56,11 +56,12 @@ def main(dataset_name, cdm, i_fold=None):
         valid_metric= 'rmse',
         n_query=16,
         num_inner_users_epochs=3,
-        lambda_= 2.67605964593852e-06,
-        inner_user_lr= 0.0007838402204978467,
-        meta_lr=2.0
+        lambda_= 0,
+        inner_user_lr= 0.01,
+        meta_lr=3.0
     )
-    config['learning_users_emb_lr'] = 0.0001
+
+    config['learning_users_emb'] = 3.0
     logging.info(f'#### config : {config} ####')
 
     concept_map = json.load(open(
