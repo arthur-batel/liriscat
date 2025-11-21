@@ -36,5 +36,5 @@ BETA-CD; assist0910; meta_lr=0.01, kl_weight = 0.0005
 MAML; math2; meta_lr = 0.1, inner_user_lr = 0.01
 MAML; assist0910; meta_lr = 0.05, inner_user_lr = 1.5
 
-MICAT; math2; meta_lr = 2.0,learning_users_emb_lr = 0.0001
+MICAT; math2; meta_lr = 2.5,learning_users_emb_lr = 1.5
 MICAT;Assist0910; meta_lr = 3.0,learning_users_emb_lr = 0.001
